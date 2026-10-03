@@ -15,6 +15,15 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 class SocketDialerTest {
+	@Test void failedDiagnosticObserverCannotBreakGameplayConnection() throws Exception {
+		try (Fixture server = new Fixture(socket -> socket.getOutputStream().write(42));
+			SocketDialer dialer = new SocketDialer(event -> { throw new IllegalStateException("broken logger"); })) {
+			try (var socket = dialer.connect(server.endpoint(), server.config(NetworkConfig.Mode.DIRECT))) {
+				assertEquals(42, socket.getInputStream().read());
+			}
+			server.finished();
+		}
+	}
 	@FunctionalInterface interface Session { void run(Socket socket) throws Exception; }
 
 	static final class Fixture implements AutoCloseable {

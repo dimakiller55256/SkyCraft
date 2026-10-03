@@ -8,6 +8,7 @@
     "ClientLevelAccessor",
     "ClientLevelDigMixin",
     "ConnectionHandshakeMixin",
+    "ConnectionDiagnosticsMixin",
     "EntityCollideMixin",
     "FramerateLimitTrackerMixin",
     "InputConstantsMixin",

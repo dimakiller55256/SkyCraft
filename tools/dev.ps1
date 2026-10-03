@@ -75,6 +75,15 @@ if ($Action -eq 'BuildFabric' -or $Action -eq 'NetworkSmoke') {
                     (Get-Content -LiteralPath $smokeResult -Raw).Trim() -ne 'PASS') {
                     throw 'Minecraft networking smoke check failed; inspect .tools/network-smoke-game/logs/latest.log.'
                 }
+                $traceDir = Join-Path $repoRoot '.tools\network-smoke-game\logs\skycraft-network'
+                $traceFile = Get-ChildItem -LiteralPath $traceDir -Filter 'AUTO-auto-*.jsonl' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                if (-not $traceFile) { throw 'Networking smoke test did not create its diagnostic log.' }
+                $traceEvents = Get-Content -LiteralPath $traceFile.FullName -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json }
+                if (-not ($traceEvents | Where-Object event -eq 'channel_active') -or
+                    -not ($traceEvents | Where-Object { $_.event -eq 'dial_phase' -and $_.phase -eq 'http_connect_result' -and $_.status_code -eq 200 }) -or
+                    -not ($traceEvents | Where-Object event -eq 'trace_closed')) {
+                    throw 'Networking smoke test did not record channel, proxy and logger-shutdown events.'
+                }
             } else {
                 & .\gradlew.bat build --no-daemon --no-configuration-cache --console=plain
             }

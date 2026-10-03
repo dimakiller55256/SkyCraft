@@ -153,6 +153,7 @@ public final class MirrorWorld {
 	}
 
 	public static void connectionFailed(Minecraft minecraft, String reason) {
+		NetworkDiagnostics.event("return_to_own_world", java.util.Map.of("attempt_id", NetworkClient.activeAttempt()));
 		pendingNote = "SkyCraft: " + reason + " Возвращаюсь в свой мир.";
 		SkyCraft.LOG.info("SkyCraft network: {}", pendingNote);
 		sessionJoin = null;

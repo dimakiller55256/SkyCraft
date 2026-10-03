@@ -13,6 +13,7 @@ public final class SkyCraftClient implements ClientModInitializer {
 		DiscordPresence.start();
 		DestructionToggle.register();
 		NetworkClient.register();
+		NetworkDiagnostics.initialize(net.minecraft.client.Minecraft.getInstance());
 		// /skycraft host opens a fixed port; /join <address> and /leave switch worlds.
 		net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback.EVENT.register((dispatcher, context) -> {
 			dispatcher.register(net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal("join")

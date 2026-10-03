@@ -14,6 +14,8 @@ public final class LoopbackBridge implements AutoCloseable {
 	private final Socket upstream;
 	private final AtomicBoolean closed = new AtomicBoolean();
 	private final AtomicBoolean reported = new AtomicBoolean();
+	private final java.util.concurrent.atomic.LongAdder upload = new java.util.concurrent.atomic.LongAdder();
+	private final java.util.concurrent.atomic.LongAdder download = new java.util.concurrent.atomic.LongAdder();
 	private volatile Socket client;
 
 	public LoopbackBridge(Socket upstream, Consumer<IOException> onFailure) throws IOException {
@@ -40,10 +42,18 @@ public final class LoopbackBridge implements AutoCloseable {
 	}
 
 	public int port() { return listener.getLocalPort(); }
+	public long uploadBytes() { return upload.sum(); }
+	public long downloadBytes() { return download.sum(); }
 
 	private void copy(Socket from, Socket to, AtomicInteger directions, Consumer<IOException> onFailure) {
 		try {
-			from.getInputStream().transferTo(to.getOutputStream());
+			byte[] buffer = new byte[32768];
+			int count;
+			while ((count = from.getInputStream().read(buffer)) >= 0) {
+				if (count == 0) continue;
+				to.getOutputStream().write(buffer, 0, count);
+				(from == upstream ? download : upload).add(count);
+			}
 			to.shutdownOutput(); // EOF in one direction must not truncate the other direction.
 		} catch (IOException e) {
 			fail(e, onFailure);

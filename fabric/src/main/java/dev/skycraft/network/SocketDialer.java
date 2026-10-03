@@ -17,6 +17,18 @@ public final class SocketDialer implements AutoCloseable {
 	private Socket socket;
 	private boolean closed;
 	private long deadline;
+	private long began;
+	private Endpoint peer;
+	private final java.util.function.Consumer<DialEvent> observer;
+	public record DialEvent(String phase, long elapsedMillis, String peerHost, int peerPort, Integer statusCode, String exceptionType) { }
+	public SocketDialer() { this(event -> { }); }
+	public SocketDialer(java.util.function.Consumer<DialEvent> observer) { this.observer = observer; }
+	private void emit(String phase, Integer code, Throwable error) {
+		try {
+			observer.accept(new DialEvent(phase, began == 0 ? 0 : (System.nanoTime() - began) / 1_000_000L,
+				peer == null ? "" : peer.host(), peer == null ? 0 : peer.port(), code, error == null ? null : error.getClass().getSimpleName()));
+		} catch (RuntimeException ignored) { /* Diagnostics must never break a connection. */ }
+	}
 
 	public Socket connect(Endpoint target, NetworkConfig config) throws IOException {
 		Socket current = new Socket(Proxy.NO_PROXY);
@@ -24,10 +36,17 @@ public final class SocketDialer implements AutoCloseable {
 			if (closed || socket != null) { current.close(); throw new IOException("Соединение отменено."); }
 			socket = current;
 		}
-		deadline = System.nanoTime() + config.timeoutMillis() * 1_000_000L;
+		began = System.nanoTime();
+		deadline = began + config.timeoutMillis() * 1_000_000L;
 		try {
-			Endpoint peer = config.mode() == NetworkConfig.Mode.DIRECT ? target : config.proxy();
-			current.connect(new InetSocketAddress(peer.host(), peer.port()), remainingMillis());
+			peer = config.mode() == NetworkConfig.Mode.DIRECT ? target : config.proxy();
+			emit("dns_started", null, null);
+			InetSocketAddress address = new InetSocketAddress(peer.host(), peer.port());
+			if (address.isUnresolved()) throw new java.net.UnknownHostException(peer.host());
+			emit("dns_resolved", null, null);
+			emit("tcp_connect_started", null, null);
+			current.connect(address, remainingMillis());
+			emit("tcp_connected", null, null);
 			current.setTcpNoDelay(true);
 			switch (config.mode()) {
 				case DIRECT -> { }
@@ -35,8 +54,10 @@ public final class SocketDialer implements AutoCloseable {
 				case HTTP_CONNECT -> httpConnect(current, target, config);
 			}
 			current.setSoTimeout(0); // Gameplay may remain idle; handshake timeout must not leak into it.
+			emit("dial_ready", null, null);
 			return current;
 		} catch (IOException | RuntimeException e) {
+			emit("dial_failed", null, e);
 			close();
 			throw e;
 		}
@@ -46,11 +67,13 @@ public final class SocketDialer implements AutoCloseable {
 		var out = current.getOutputStream();
 		InputStream in = current.getInputStream();
 		boolean auth = !config.username().isEmpty() || !config.password().isEmpty();
+		emit("socks_greeting", null, null);
 		// Offer only the requested authentication mode; never silently downgrade credentials.
 		out.write(new byte[] { 5, 1, (byte)(auth ? 2 : 0) });
 		out.flush();
 		if (read(current, in) != 5) throw new IOException("Прокси не отвечает по SOCKS5.");
 		int method = read(current, in);
+		emit("socks_method", method, null);
 		if (method != (auth ? 2 : 0)) throw new IOException("SOCKS5: прокси отклонил способ авторизации.");
 		if (auth) {
 			byte[] user = config.username().getBytes(StandardCharsets.UTF_8);
@@ -59,7 +82,9 @@ public final class SocketDialer implements AutoCloseable {
 				throw new IOException("SOCKS5: длина имени и пароля должна быть от 1 до 255 байт.");
 			}
 			out.write(1); out.write(user.length); out.write(user); out.write(pass.length); out.write(pass); out.flush();
-			if (read(current, in) != 1 || read(current, in) != 0) throw new IOException("SOCKS5: неверные данные авторизации.");
+			int authVersion = read(current, in), authStatus = read(current, in);
+			emit("socks_auth", authStatus, null);
+			if (authVersion != 1 || authStatus != 0) throw new IOException("SOCKS5: неверные данные авторизации.");
 		}
 		out.write(new byte[] { 5, 1, 0 });
 		if (target.host().contains(":")) {
@@ -70,6 +95,7 @@ public final class SocketDialer implements AutoCloseable {
 		}
 		out.write(target.port() >>> 8); out.write(target.port() & 255); out.flush();
 		int version = read(current, in), status = read(current, in), reserved = read(current, in), type = read(current, in);
+		emit("socks_connect_result", status, null);
 		if (version != 5 || reserved != 0) throw new IOException("SOCKS5: повреждён ответ прокси.");
 		if (status != 0) throw new IOException("SOCKS5: соединение отклонено (код " + status + ").");
 		int length = switch (type) {
@@ -82,6 +108,7 @@ public final class SocketDialer implements AutoCloseable {
 	}
 
 	private void httpConnect(Socket current, Endpoint target, NetworkConfig config) throws IOException {
+		emit("http_connect_started", null, null);
 		String authority = target.authority();
 		String request = "CONNECT " + authority + " HTTP/1.1\r\nHost: " + authority + "\r\n";
 		if (!config.username().isEmpty() || !config.password().isEmpty()) {
@@ -109,6 +136,7 @@ public final class SocketDialer implements AutoCloseable {
 		var match = java.util.regex.Pattern.compile("HTTP/1\\.[01] ([0-9]{3})(?: .*)?").matcher(statusLine);
 		if (!match.matches()) throw new IOException("HTTP-прокси: некорректный ответ CONNECT.");
 		int status = Integer.parseInt(match.group(1));
+		emit("http_connect_result", status, null);
 		if (status == 407) throw new IOException("HTTP-прокси: требуется авторизация или неверный пароль (407).");
 		if (status < 200 || status >= 300) throw new IOException("HTTP-прокси отклонил CONNECT (код " + status + ").");
 	}
@@ -127,7 +155,9 @@ public final class SocketDialer implements AutoCloseable {
 	}
 
 	@Override public synchronized void close() {
+		if (closed) return;
 		closed = true;
 		if (socket != null) try { socket.close(); } catch (IOException ignored) { }
+		emit("dial_closed", null, null);
 	}
 }

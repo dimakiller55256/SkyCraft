@@ -22,6 +22,8 @@ class LoopbackBridgeTest {
 			client.getOutputStream().write(payload);
 			client.shutdownOutput();
 			assertArrayEquals(payload, client.getInputStream().readAllBytes());
+			assertEquals(payload.length, bridge.uploadBytes());
+			assertEquals(payload.length, bridge.downloadBytes());
 			server.finished();
 			assertTrue(failures.isEmpty(), failures.toString());
 		}

@@ -1,5 +1,9 @@
 # SkyCraft
 
+Доработки YS: [настройки сети](docs/YS-NETWORK.md),
+[инструкция тестов для хоста и клиента](docs/YS-TESTING.md),
+[таблица Excel](docs/testing/SkyCraft-Network-Tests.xlsx).
+
 ![SkyCraft: a Minecraft player walking through Riverwood with the Minecraft HUD](docs/screenshot.jpg)
 
 Play Skyrim as a Minecraft player. You move with Minecraft's physics, carry Minecraft's inventory

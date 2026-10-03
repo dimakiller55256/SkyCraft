@@ -1,0 +1,91 @@
+[CmdletBinding()]
+param(
+    [ValidateSet('Check', 'BuildFabric', 'BuildSkse')]
+    [string]$Action = 'Check',
+    [string]$JavaHome,
+    [string]$CMakePath
+)
+
+$ErrorActionPreference = 'Stop'
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$configPath = Join-Path $repoRoot '.tools\dev-local.json'
+$localConfig = @{}
+if (Test-Path -LiteralPath $configPath) {
+    $localConfig = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+}
+if (-not $JavaHome) { $JavaHome = $localConfig.javaHome }
+if (-not $JavaHome) { $JavaHome = $env:JAVA_HOME }
+if (-not $CMakePath) { $CMakePath = $localConfig.cmakePath }
+if (-not $CMakePath) {
+    $cmakeCommand = Get-Command cmake -ErrorAction SilentlyContinue
+    if ($cmakeCommand) { $CMakePath = $cmakeCommand.Source }
+}
+
+$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+$vsRoot = $null
+if (Test-Path -LiteralPath $vswhere) {
+    $vsRoot = & $vswhere -latest -products '*' -version '[18.0,19.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+}
+if (-not $CMakePath -and $vsRoot) {
+    $candidate = Join-Path $vsRoot 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+    if (Test-Path -LiteralPath $candidate) { $CMakePath = $candidate }
+}
+$jdkReady = $JavaHome -and (Test-Path -LiteralPath (Join-Path $JavaHome 'bin\javac.exe'))
+$cmakeReady = $CMakePath -and (Test-Path -LiteralPath $CMakePath)
+$commonLibReady = Test-Path -LiteralPath (Join-Path $repoRoot 'skse\extern\CommonLibSSE-NG\CMakeLists.txt')
+$vcpkgReady = Test-Path -LiteralPath (Join-Path $repoRoot '.tools\vcpkg\vcpkg.exe')
+
+if ($Action -eq 'Check') {
+    [pscustomobject]@{
+        Repository = $repoRoot
+        JavaHome = $JavaHome
+        JdkPresent = [bool]$jdkReady
+        VisualStudio2026Cpp = $vsRoot
+        CMake = $CMakePath
+        CommonLibPresent = $commonLibReady
+        VcpkgPresent = $vcpkgReady
+        AutomaticDeployment = 'Disabled by BuildSkse'
+    } | Format-List
+    if ($jdkReady) { & (Join-Path $JavaHome 'bin\javac.exe') --version }
+    return
+}
+
+if ($Action -eq 'BuildFabric') {
+    if (-not $jdkReady) { throw 'Set -JavaHome to a JDK 25 folder, or configure .tools/dev-local.json.' }
+    $savedEnvironment = @{}
+    foreach ($name in @('JAVA_HOME', 'GRADLE_USER_HOME', 'TEMP', 'TMP')) {
+        $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+    }
+    $tmpPath = Join-Path $repoRoot '.tools\tmp'
+    New-Item -ItemType Directory -Path $tmpPath -Force | Out-Null
+    try {
+        $env:JAVA_HOME = $JavaHome
+        $env:GRADLE_USER_HOME = Join-Path $repoRoot '.tools\gradle-user-home'
+        # The desktop environment's default TEMP failed Java's AF_UNIX loopback.
+        # This process-local directory lets Gradle establish its local connection.
+        $env:TEMP = $tmpPath
+        $env:TMP = $tmpPath
+        Push-Location (Join-Path $repoRoot 'fabric')
+        try {
+            & .\gradlew.bat build --no-daemon --no-configuration-cache --console=plain
+            if ($LASTEXITCODE -ne 0) { throw "Fabric build failed (exit $LASTEXITCODE)." }
+        } finally { Pop-Location }
+    } finally {
+        foreach ($name in $savedEnvironment.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process')
+        }
+    }
+    return
+}
+
+if (-not $vsRoot) { throw 'Install Visual Studio 2026 Build Tools with C++ x64/x86 and a Windows SDK.' }
+if (-not $cmakeReady) { throw 'CMake is missing. Install the C++ CMake tools component or pass -CMakePath.' }
+if (-not $commonLibReady) { throw 'Run git submodule update --init --recursive.' }
+if (-not $vcpkgReady) { throw 'Clone microsoft/vcpkg into .tools/vcpkg and run bootstrap-vcpkg.bat -disableMetrics.' }
+Push-Location (Join-Path $repoRoot 'skse')
+try {
+    & $CMakePath --preset default '-DSKYCRAFT_DEPLOY_DIR='
+    if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed (exit $LASTEXITCODE)." }
+    & $CMakePath --build --preset release
+    if ($LASTEXITCODE -ne 0) { throw "SKSE build failed (exit $LASTEXITCODE)." }
+} finally { Pop-Location }

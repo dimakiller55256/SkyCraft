@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>SkyCraft: проверка без друга</title><style>body{font:17px/1.65 system-ui,sans-serif;color:#213547;background:#f5f8fc;margin:0}
+header,main{max-width:1100px;margin:auto;padding:24px}header{background:#17324d;color:white;border-radius:0 0 20px 20px}
+nav{display:flex;gap:12px;flex-wrap:wrap}nav a{color:#d0f3fa}article,details{background:white;padding:18px 24px;border:1px solid #dce5ed;border-radius:12px;margin:16px 0}
+h2{margin-top:44px}h3{margin:0}summary{cursor:pointer;font-weight:700}article,section,details{scroll-margin-top:12px}
+p{white-space:pre-wrap;overflow-wrap:anywhere}code{font:15px/1.7 Consolas,monospace;background:#eaf1f7;padding:3px 6px;border-radius:4px}
+details article{padding:14px;border:0;border-top:1px solid #dce5ed;border-radius:0}a{color:#087f8c}</style><header><h1>SkyCraft: проверка без друга</h1><p>Готовая последовательность для одного ПК: S01_01 → S02_01 → S03_01 (SOCKS5) → S03_02 (HTTP CONNECT) → S01_02 (возврат DIRECT). Сначала прочитайте G1–G8, затем выполняйте B0–B10 по порядку. B11 — необязательный тест разработчика. Второй игрок и сторонний сетевой аккаунт для этой последовательности не нужны.</p><nav><a href="#section0">Пути, файлы и ввод команд</a><a href="#section1">Проверка одному по шагам</a><a href="#section2">Сбор отчётов: каждое поле</a></nav></header><main><section id="section0"><h2>Пути, файлы и ввод команд</h2><article id="G1"><h3>G1 — Найти папку Minecraft</h3><p><strong>Что сделать:</strong>
+1. Откройте Prism Launcher, которым SkyCraft запускает Minecraft.
+2. Нажмите правой кнопкой на используемом экземпляре SkyCraft → «Папка Minecraft» (Minecraft folder). Откроется Проводник.
+3. Нажмите Ctrl+L в Проводнике, затем Ctrl+C: скопируется полный путь. Запишите его в отдельный текстовый файл. В этой инструкции этот путь обозначен словом MINECRAFT.
+4. Проверьте, что внутри есть папки mods, config, logs. Название последней папки может быть minecraft или .minecraft; выбирайте фактическую, не переименовывайте её.</p><p><strong>Что проверить:</strong>
+Например, если Проводник открыл D:\PrismLauncher\instances\SkyCraft\minecraft, то файл настроек находится в D:\PrismLauncher\instances\SkyCraft\minecraft\config\skycraft.properties. Это пример установки; друг берёт путь из своего Prism. Папка экземпляра с instance.cfg находится на уровень выше и для поля «Каталог Minecraft» не подходит.</p></article><article id="G2"><h3>G2 — Открыть нужный файл настроек</h3><p><strong>Что сделать:</strong>
+1. Закройте Skyrim через меню выхода. В Prism убедитесь, что именно экземпляр SkyCraft больше не запущен. Если он остался активен, используйте кнопку остановки этого экземпляра. Другие Java-программы не закрывайте.
+2. В папке из <a href="#G1">G1</a> откройте config. Найдите skycraft.properties.
+3. ПКМ по skycraft.properties → «Открыть с помощью» → «Блокнот». Если расширение скрыто, в Проводнике включите «Вид → Показать → Расширения имён файлов» (Windows 11) или «Вид → Расширения имён файлов» (Windows 10).</p><p><strong>Что проверить:</strong>
+Все параметры join и network.* редактируются в MINECRAFT\config\skycraft.properties. SkyCraft.ini в моде MO2 управляет запуском и этими параметрами сети не заменяется. Если файла нет, запустите SkyCraft через SKSE/MO2 до HUD, выйдите из обеих игр и проверьте папку снова. Если файла всё ещё нет — сначала соберите отчёт запуска по <a href="#R1">R1</a>, не создавайте наугад файл в другой установке.</p></article><article id="G3"><h3>G3 — Сделать копии до изменения</h3><p><strong>Что сделать:</strong>
+1. Создайте папку backup внутри распакованного тестового комплекта вне Skyrim, например D:\SkyCraftTest\backup.
+2. Скопируйте туда skycraft.properties из <a href="#G2">G2</a>; назовите копию skycraft.properties.before-tests.
+3. Перед проверкой /join или блоков при закрытых обеих играх скопируйте всю папку MINECRAFT\saves\SkyCraft в backup\SkyCraft-world-before-tests. Если мира ещё нет, он создастся при первом запуске. Skyrim проверяйте на отдельном сохранении, основное не перезаписывайте.</p><p><strong>Что проверить:</strong>
+Папка saves\SkyCraft — мир Minecraft, который SkyCraft открывает автоматически. Выбор другого сохранения Skyrim не создаёт новый мир Minecraft. Копии остаются у вас; в отчёт их не добавляйте.</p></article><article id="G4"><h3>G4 — Изменить и сохранить строки</h3><p><strong>Что сделать:</strong>
+1. В Блокноте ищите ключ через Ctrl+F, например network.mode=. Если он есть — замените всю его строку. Если отсутствует — добавьте строку в конец файла на новой строке.
+2. Для каждого ключа оставьте только одну строку: повторяющиеся join= или network.mode= удалите, сохранив нужное значение. Строки, начинающиеся с #, являются комментариями.
+3. «Пустое значение join» записывается буквально join=, без кавычек и без слова «пусто».
+4. Нажмите Ctrl+S. Сохраните кодировку UTF-8 без BOM, если Блокнот предлагает выбор кодировки. Закройте Блокнот и откройте файл повторно: значения должны сохраниться, имя — skycraft.properties, без добавленного .txt.</p><p><strong>Что проверить:</strong>
+Пример готовой базовой конфигурации:
+<code>join=</code>
+<code>network.mode=DIRECT</code>
+<code>network.hostPort=25565</code>
+<code>network.advertisedAddress=</code>
+<code>network.timeoutMillis=10000</code>
+Остальные существующие строки оставьте. Эти пять строк редактируют файл, они не являются командами чата. Параметр timeoutMillis задаётся в миллисекундах: 10000 = 10 секунд.</p></article><article id="G5"><h3>G5 — Применить настройки и запустить игру</h3><p><strong>Что сделать:</strong>
+После редактирования по <a href="#G4">G4</a> заново запустите SKSE через MO2: в списке запускаемых программ выберите SKSE, нажмите «Запустить», загрузите тестовое сохранение после Хелгена и дождитесь HUD Minecraft. При каждой смене сетевого режима в этой инструкции выполняйте такой перезапуск. Не запускайте вручную второй SkyCraft одновременно.</p><p><strong>Что проверить:</strong>
+Перезапуск гарантирует применение join, который читается при запуске. Сетевые команды /join, /skycraft host и /skycraft netcheck также читают network.* перед действием. Если HUD/движение отсутствуют, переходите к отчёту запуска <a href="#R1">R1</a>, сетевой тест пока не выполняйте.</p></article><article id="G6"><h3>G6 — Куда вводить команды</h3><p><strong>Что сделать:</strong>
+Команды, начинающиеся с /: окно Skyrim с загруженным сохранением → английская раскладка → T → вставить или набрать ОДНУ команду → Enter. Для следующей команды снова T. Escape закрывает чат.
+Команды Windows: нажмите Win, наберите Windows PowerShell, откройте приложение. Вставьте ОДНУ приведённую команду и нажмите Enter. Для Get-/Test-команд права администратора и особая текущая папка не требуются. После проверки вернитесь в Skyrim через Alt+Tab.</p><p><strong>Что проверить:</strong>
+Стрелки → в старых описаниях означали порядок, а не часть команды; в новых шагах команды вынесены на отдельные строки. Если чат T не открывается, запишите этот факт и соберите <a href="#R1">R1</a>. Не вводите /skycraft в консоль Skyrim, открываемую клавишей ~.</p></article><article id="G7"><h3>G7 — Значения, время и номер попытки</h3><p><strong>Что сделать:</strong>
+HOST_LAN_IP — IPv4 ПК хоста из A1; HOST_ROUTER — шлюз из A1; HOST_WAN_IP — WAN адрес из A4. HOST_PORT — внутренний порт, EXTERNAL_PORT — внешний порт роутера. ENDPOINT — готовая строка адрес:порт (для IPv6 [адрес]:порт). Эти обозначения заменяйте своими данными.
+Run ID — ваше название попытки: L01_01, S01_01 и т. п. Следующая попытка того же сценария: L01_02. Для двух ПК ID одинаковый.
+Текущее UTC-время в PowerShell:
+<code>[DateTime]::UtcNow.ToString(&quot;yyyy-MM-ddTHH:mm:ssZ&quot;)</code></p><p><strong>Что проверить:</strong>
+Время в событиях JSONL/events.csv уже записано как UTC. Московское время имеет UTC+3; записывайте UTC командой либо подписывайте свои наблюдения «МСК». Не вычитайте часы повторно из UTC лога. Начало прогона — первое событие environment (поле utc), а не время создания отчёта.</p></article><article id="G8"><h3>G8 — Восстановить настройки</h3><p><strong>Что сделать:</strong>
+1. Закройте Skyrim и его экземпляр Minecraft по <a href="#G2">G2</a>.
+2. Если хотите полностью вернуть прежнюю конфигурацию, скопируйте backup\skycraft.properties.before-tests обратно в MINECRAFT\config и переименуйте копию в skycraft.properties, подтвердив замену.
+3. Если хотите сохранить базовый DIRECT для будущих тестов, вместо полного отката примените пять строк из <a href="#G4">G4</a>.
+4. Верните исходные состояния VPN, Cloudflare и zapret, записанные до тестов. Затем выполните <a href="#G5">G5</a>.</p><p><strong>Что проверить:</strong>
+Копию мира восстанавливают только при необходимости и при закрытых обеих играх: сначала сохраните текущее MINECRAFT\saves\SkyCraft под новым именем в backup, затем скопируйте исходную копию обратно как MINECRAFT\saves\SkyCraft. Это возвращает изменения мира к состоянию копии; без нужды мир не заменяйте.</p></article></section><section id="section1"><h2>Проверка одному по шагам</h2><article id="B0"><h3>B0 — Подготовка без друга</h3><p><strong>Что сделать:</strong>
+1. Распакуйте новый комплект целиком вне Skyrim. Откройте эту инструкцию, таблицу и Блокнот для заметок.
+2. Если network.2 уже установлен, повторная установка не нужна. Запустите «Проверить сборку.cmd»: путь Minecraft из <a href="#G1">G1</a>, папка с SkyrimSE.exe, затем папка Mods вашего MO2 по подсказкам. Откройте полученный ПРОВЕРКА.txt по пути из программы. FAIL сначала разберите, WARN прочитайте.
+3. Выполните <a href="#G1">G1</a>–<a href="#G5">G5</a>, включая копии и пять базовых строк <a href="#G4">G4</a>. Запишите состояние VPN/Cloudflare/zapret; для первого прогона выключите их через интерфейсы программ.
+4. Загрузите тестовое сохранение, проверьте HUD, WASD и камеру. В чате:
+<code>/skycraft debug status</code></p><p><strong>Что проверить:</strong>
+Всё делаете вы на одном ПК. Второй Skyrim, второй Minecraft, внешний IP, вход в роутер и проброс порта для <a href="#B1">B1</a>–<a href="#B10">B10</a> не нужны. PASS этих тестов означает только их собственное ожидание; совместную игру в таблице оставьте NOT_RUN.</p></article><article id="B1"><h3>B1 — S01_01: начать запись и открыть порт</h3><p><strong>Что сделать:</strong>
+После свежего запуска <a href="#G5">G5</a> откройте Windows PowerShell по <a href="#G6">G6</a>:
+<code>Get-NetTCPConnection -State Listen -LocalPort 25565 -ErrorAction SilentlyContinue</code>
+Если вывод пустой — порт свободен. Если строка есть — остановитесь, не закрывайте неизвестный процесс; для этих готовых команд сначала освободите порт завершением известного старого SkyCraft либо пришлите вывод. Вернитесь в Skyrim. В чате по одной команде:
+<code>/skycraft debug start S01_01 host</code>
+<code>/skycraft debug status</code>
+<code>/skycraft host 25565</code>
+<code>/skycraft debug mark HOST_READY</code></p><p><strong>Что проверить:</strong>
+status показывает включённый логгер и путь с S01_01-host. Команда host отвечает «Мир открыт на порту 25565». Если «Мир уже открыт», для проверки host_open начните заново со свежего запуска <a href="#G5">G5</a> и нового ID S01_02. Ошибка порта/логгера — запишите её и соберите отчёт <a href="#R2">R2</a>–<a href="#R5">R5</a>.</p></article><article id="B2"><h3>B2 — S01_01: проверить TCP на своём ПК</h3><p><strong>Что сделать:</strong>
+В чате Skyrim:
+<code>/skycraft netcheck 127.0.0.1:25565</code>
+Дождитесь сообщения о доступном TCP. В Windows PowerShell:
+<code>Get-NetTCPConnection -State Listen -LocalPort 25565 | Select-Object LocalAddress,LocalPort,OwningProcess</code>
+<code>Test-NetConnection -ComputerName 127.0.0.1 -Port 25565 -InformationLevel Detailed</code>
+Скопируйте вывод в заметки. Вернитесь в игру, походите 2 минуты, убедитесь, что HUD и ввод работают.</p><p><strong>Что проверить:</strong>
+Ожидается строка порта LISTEN, TcpTestSucceeded=True и в чате «TCP … доступен». 127.0.0.1 здесь является готовым адресом текущего ПК. Не выполняйте /join 127.0.0.1:25565: вход в себя закроет собственный сервер и не создаст второго игрока.</p></article><article id="B3"><h3>B3 — S01_01: закончить и собрать отчёт</h3><p><strong>Что сделать:</strong>
+Выполните <a href="#R2">R2</a>. В мастере режима 2 по <a href="#R3">R3</a>–<a href="#R4">R4</a> введите: ID S01_01; роль Host; сеть Loopback; адрес 127.0.0.1; порт 25565; фактические состояния программ; pass при выполнении <a href="#B1">B1</a>–<a href="#B2">B2</a>, иначе fail/partial с причиной. Notes: «S01; DIRECT; один ПК; LISTEN и TCP проверены; второго игрока нет».
+Проверьте отчёт по <a href="#R5">R5</a> и заполните <a href="#R6">R6</a>.</p><p><strong>Что проверить:</strong>
+В events.csv есть host_open, probe_result с tcp_ready и trace_closed. S01 может получить PASS; поля движения/блоков двух игроков и rejoin остаются NOT_RUN. Сохраните ZIP до следующего теста.</p></article><article id="B4"><h3>B4 — S02_01: проверить отказ на закрытом порту</h3><p><strong>Что сделать:</strong>
+1. Закройте обе игры по <a href="#G2">G2</a> и запустите их снова по <a href="#G5">G5</a> с базовыми строками <a href="#G4">G4</a>. /host в этом тесте не выполняйте.
+2. В PowerShell:
+<code>Get-NetTCPConnection -State Listen -LocalPort 25566 -ErrorAction SilentlyContinue</code>
+Пустой вывод = никто не слушает. Если есть строка, остановите этот тест, не отключайте неизвестную программу.
+3. В чате Skyrim по одной команде:
+<code>/skycraft debug start S02_01 client</code>
+<code>/skycraft netcheck 127.0.0.1:25566</code>
+Дождитесь отказа. При timeoutMillis=10000 обычно ответ быстрее 15 секунд; если ответа нет, запишите время и не запускайте следующую проверку поверх незавершённой.</p><p><strong>Что проверить:</strong>
+Ожидаемый результат — отказ соединения, игра остаётся управляемой. Это намеренно неправильный адрес порта; появление ошибки здесь является успешной проверкой обработки ошибки.</p></article><article id="B5"><h3>B5 — S02_01: проверить восстановление своего мира</h3><p><strong>Что сделать:</strong>
+После ответа netcheck в том же чате:
+<code>/join 127.0.0.1:25566</code>
+Подождите возврата в свой Minecraft-мир. Запишите сообщение и длительность. Сеть должна отказать; загрузка своего мира занимает дополнительное время. Если спустя 60 секунд HUD/управление не восстановились, запишите это как FAIL восстановления и соберите отчёт. После восстановления:
+<code>/skycraft debug mark OWN_WORLD_OK</code>
+Проверьте WASD и чат в течение 2 минут с начала <a href="#B4">B4</a>, затем <a href="#R2">R2</a>. Мастер: S02_01, Client, Loopback, 127.0.0.1, 25566; pass только если отказ и восстановление выполнены.</p><p><strong>Что проверить:</strong>
+В отчёте probe_result=failed; после /join ожидается return_to_own_world и затем world_join с result=local. Сохраните полный текст ошибки в Notes. Сеть в таблице: REFUSED или TIMEOUT по сообщению; сам сценарий может быть PASS.</p></article><article id="B6"><h3>B6 — S03_01: настроить намеренно отсутствующий SOCKS5</h3><p><strong>Что сделать:</strong>
+1. Сохраните отчёт S02. Закройте обе игры по <a href="#G2">G2</a>.
+2. В PowerShell повторите проверку 25566 из <a href="#B4">B4</a>: вывод должен быть пустым.
+3. Откройте MINECRAFT\config\skycraft.properties по <a href="#G2">G2</a>. По <a href="#G4">G4</a> оставьте или добавьте строки:
+<code>join=</code>
+<code>network.mode=SOCKS5</code>
+<code>network.proxy=127.0.0.1:25566</code>
+<code>network.proxy.username=</code>
+<code>network.proxy.password=</code>
+<code>network.hostPort=25565</code>
+<code>network.advertisedAddress=</code>
+<code>network.timeoutMillis=10000</code>
+Сохраните и перезапустите по <a href="#G5">G5</a>.</p><p><strong>Что проверить:</strong>
+Порт 25566 намеренно свободен; прокси на нём не запускаем. Пустые username/password нужны только этому отрицательному тесту. Реальные прежние значения находятся в копии <a href="#G3">G3</a>.</p></article><article id="B7"><h3>B7 — S03_01: проверить SOCKS5 без скрытого DIRECT</h3><p><strong>Что сделать:</strong>
+В чате по одной команде:
+<code>/skycraft debug start S03_01 client</code>
+<code>/skycraft host 25565</code>
+В PowerShell проверьте прямую цель:
+<code>Test-NetConnection -ComputerName 127.0.0.1 -Port 25565</code>
+Должно быть TcpTestSucceeded=True. Вернитесь в чат:
+<code>/skycraft netcheck 127.0.0.1:25565</code>
+Ожидается отказ подключения через SOCKS5 к 127.0.0.1:25566. Проверьте ввод/HUD, запишите текст, затем <a href="#R2">R2</a>. Мастер: S03_01, Client, Loopback, игровой адрес 127.0.0.1, игровой порт 25565; режим SOCKS5 и отсутствующий прокси 25566 — в Notes.</p><p><strong>Что проверить:</strong>
+Прямая игровая цель доступна, но выбранный прокси отсутствует. Успешный netcheck здесь — FAIL: он не должен обходить выбранный транспорт. Если не получилось открыть 25565, этот критерий не проверен: PARTIAL, сначала разберите порт. Наблюдайте не менее 3 минут с начала проверки.</p></article><article id="B8"><h3>B8 — S03_02: повторить для HTTP CONNECT</h3><p><strong>Что сделать:</strong>
+После сбора S03_01 закройте обе игры по <a href="#G2">G2</a>. В MINECRAFT\config\skycraft.properties замените только строку режима на:
+<code>network.mode=HTTP_CONNECT</code>
+Остальные тестовые строки <a href="#B6">B6</a> оставьте. Сохраните по <a href="#G4">G4</a>, запустите по <a href="#G5">G5</a>. Повторите <a href="#B7">B7</a>, используя команды:
+<code>/skycraft debug start S03_02 client</code>
+<code>/skycraft host 25565</code>
+<code>/skycraft netcheck 127.0.0.1:25565</code>
+Перед netcheck снова подтвердите прямой TCP PowerShell-командой <a href="#B7">B7</a>. После 3 минут и <a href="#R2">R2</a> соберите отчёт: S03_02, Client, Loopback, 127.0.0.1, 25565; HTTP_CONNECT в Notes.</p><p><strong>Что проверить:</strong>
+Прямая цель доступна; отказ происходит на отсутствующем HTTP-прокси 25566. Два режима имеют два отдельных ZIP. Ожидаемый отказ — PASS, неожиданный обход — FAIL. /join в открытый на себе 25565 не выполняйте.</p></article><article id="B9"><h3>B9 — Вернуть DIRECT и проверить восстановление</h3><p><strong>Что сделать:</strong>
+1. Закройте обе игры по <a href="#G2">G2</a>. В файле MINECRAFT\config\skycraft.properties примените пять базовых строк <a href="#G4">G4</a>; proxy/username/password можете вернуть из копии <a href="#G3">G3</a>, при DIRECT они не используются. Сохраните и выполните <a href="#G5">G5</a>.
+2. Повторите <a href="#B1">B1</a>–<a href="#B3">B3</a> с новым ID S01_02 вместо S01_01 во всех командах и мастере.
+3. Убедитесь, что netcheck снова успешен и HUD работает.
+4. Верните исходные состояния сетевых программ. Если требуется полностью прежняя конфигурация — <a href="#G8">G8</a>.</p><p><strong>Что проверить:</strong>
+Сохраните отдельный ZIP S01_02-host. Он подтверждает, что после отрицательных тестов базовый режим восстановился.</p></article><article id="B10"><h3>B10 — Что передать после проверки одному</h3><p><strong>Что сделать:</strong>
+Из reports распакованного комплекта: installation-*.zip проверки сборки; S01_01-host-*.zip; S02_01-client-*.zip; S03_01-client-*.zip; S03_02-client-*.zip; S01_02-host-*.zip. Имена могут включать UTC и дополнительные символы; выбирайте по ID и роли. Добавьте рабочую копию XLSX или текст с результатами каждого теста. Если HUD/чат не работали, вместо невыполненных тестов пришлите STARTUP-client-*.zip по <a href="#R1">R1</a> и напишите, где остановились.</p><p><strong>Что проверить:</strong>
+Эти тесты проверяют запуск, логгер, локальный TCP, обработку ошибок и восстановление. Внешняя доступность, NAT/CGNAT, вход другого игрока и совместное движение/блоки остаются NOT_RUN. Включение VPN для повторного loopback-теста проверит только этот локальный путь.</p></article><article id="B11"><h3>B11 — Необязательный автоматический тест разработчика S04</h3><p><strong>Что сделать:</strong>
+В friend-kit исходников нет — там S04 оставьте NOT_RUN. На ПК с уже настроенными исходниками откройте PowerShell в папке source: в Проводнике откройте source, в адресной строке наберите powershell и Enter. Затем:
+<code>powershell -NoProfile -ExecutionPolicy Bypass -File tools/dev.ps1 -Action NetworkSmoke</code>
+Тест запускает отдельный Minecraft с локальным тестовым HTTP-прокси и закрывается сам. Пока он идёт, не запускайте новые ручные проверки.</p><p><strong>Что проверить:</strong>
+Результат: source\.tools\network-smoke-game\network-smoke-result.txt. Откройте в Блокноте, ожидается PASS. Этот тест проверяет настоящий пакет входа и HTTP CONNECT; второго игрового мира и другого игрока в нём нет.</p></article></section><section id="section2"><h2>Сбор отчётов: каждое поле</h2><article id="R1"><h3>R1 — Если не запускается игра, HUD или чат</h3><p><strong>Что сделать:</strong>
+1. До нового запуска откройте папку распакованного комплекта и двойным щелчком запустите «Собрать отчёт.cmd».
+2. На «Режим [1]» введите 1 и Enter.
+3. На «Каталог Minecraft» вставьте полный путь из <a href="#G1">G1</a>. Enter без ввода допустим только если показанный путь точно тот же.
+4. В описании укажите этап: Bethesda/меню/загрузка/HUD/чат, точное сообщение и время.
+5. На «Добавить latest.log, SkyCraft.log и логи SKSE?» ответьте no для обычного отчёта или yes, если нужны полные логи. При yes просмотрите их до передачи.</p><p><strong>Что проверить:</strong>
+Сборщик напечатает полный путь к созданному ZIP. Это STARTUP-client-…zip в папке reports внутри комплекта. Здесь собирается последний AUTO-лог запуска, если он есть. Автоматической отправки нет.</p></article><article id="R2"><h3>R2 — Как закончить размеченный тест</h3><p><strong>Что сделать:</strong>
+В чате игры по одной команде:
+<code>/skycraft debug mark RUN_END</code>
+<code>/skycraft debug stop</code>
+Подождите 2 секунды. Затем Alt+Tab и «Собрать отчёт.cmd» из распакованного комплекта → режим 2. Если игра аварийно закрылась, сразу собирайте отчёт с прежним ID, не запускайте игру ещё раз до сбора.</p><p><strong>Что проверить:</strong>
+RUN_END — буквальная метка, заменять её не надо. ID указывается при debug start и в мастере сборщика. Если игра упала, отсутствие события trace_closed допустимо как факт сбоя, но запись отмечается незавершённой.</p></article><article id="R3"><h3>R3 — Первые поля сетевого мастера</h3><p><strong>Что сделать:</strong>
+«Каталог Minecraft (с папкой mods)»: путь из <a href="#G1">G1</a>.
+«Тот же ID, что в debug start»: ровно введённый ID, например S01_01.
+«Роль этого ПК»: Host, если лог был запущен с host; Client, если с client.
+«Где соединяются игроки»: Loopback для одного ПК и 127.0.0.1; LAN для одной домашней сети; Internet для разных сетей.
+«IP или DNS-имя хоста без порта»: только адрес, например 127.0.0.1. Для IPv6 без [] и без порта.
+«Порт игрового хоста»: отдельное число, например 25565.</p><p><strong>Что проверить:</strong>
+Все значения вводятся отдельными ответами и подтверждаются Enter. В S03 поле цели — игровой адрес 127.0.0.1 и порт 25565; недоступный прокси 127.0.0.1:25566 описывают в Notes. Это разные адреса.</p></article><article id="R4"><h3>R4 — Режимы и итог в мастере</h3><p><strong>Что сделать:</strong>
+«zapret во время прогона»: off/on/unknown.
+«Cloudflare»: off/dns/traffic_dns/unknown.
+«VPN»: off/tunnel/system_proxy/unknown. Указывайте состояние ЭТОГО ПК в момент теста.
+«Итог»: pass/fail/blocked/not_run/partial, строчными буквами, как в подсказке. Для ожидаемого отказа S02/S03 pass означает правильную обработку отказа.
+«Что произошло»: режим SkyCraft (DIRECT/SOCKS5/HTTP_CONNECT), сообщения, время, наблюдения. Пароли, токены и ссылки подписки не пишите.</p><p><strong>Что проверить:</strong>
+Enter оставляет значение в квадратных скобках; не принимайте unknown/partial молча, если знаете результат. В таблице те же статусы написаны заглавными PASS/FAIL/BLOCKED/PARTIAL/NOT_RUN. Режим network.mode запишите в «Условия прогонов → Транспорт клиента».</p></article><article id="R5"><h3>R5 — Где лежит отчёт и как его прочитать</h3><p><strong>Что сделать:</strong>
+1. Скопируйте полный путь ZIP из последней строки мастера. Либо откройте reports внутри распакованного комплекта, отсортируйте по времени изменения и найдите имя с нужным ID и ролью.
+2. Для чтения: ПКМ по ZIP → «Извлечь всё» в отдельную папку. Откройте summary.json через «Открыть с помощью → Блокнот». Для events.csv в Excel: Данные → Из текста/CSV → выбрать файл → кодировка UTF-8 → разделитель точка с запятой → Загрузить. Исходный JSONL лежит в подпапке traces.
+3. В summary.json ищите TraceFiles, Events, TraceStopped, DroppedTraceEvents. TraceFiles &gt; 0 и Events &gt; 0 означают, что найден лог; TraceStopped=true — присутствует завершение.
+4. В events.csv включите Данные → Фильтр и отфильтруйте столбец event: host_open, probe_result, world_join, return_to_own_world, trace_closed.</p><p><strong>Что проверить:</strong>
+Для успешного netcheck событие probe_result имеет result=tcp_ready; для ожидаемого отказа — failed. Пустое поле/null означает отсутствие измерения, а не ноль. Для исходных логов: MINECRAFT\logs\skycraft-network; точный файл показывает /skycraft debug status. Отправляйте исходный ZIP отчёта, не заново упакованную папку.</p></article><article id="R6"><h3>R6 — Как заполнить таблицу</h3><p><strong>Что сделать:</strong>
+Откройте SkyCraft-Network-Tests.xlsx из docs\testing комплекта и сохраните свою рабочую копию.
+«Прогоны»: найдите Run ID, заполните итог, TCP, длительность в минутах и имя ZIP. Движение/блоки обоим и leave/rejoin для одного ПК — NOT_RUN, поля входа/пинга оставьте пустыми. Для двух ПК нужны наблюдения обеих сторон.
+«Условия прогонов»: та же строка ID; начало UTC из первого события environment, адрес:порт, источник адреса, версии, состояния программ для каждой участвующей стороны. Для одного ПК в поле второй стороны напишите «второго ПК нет».</p><p><strong>Что проверить:</strong>
+S01_01: роль Host, Loopback, 127.0.0.1, порт 25565. S02_01: Client, Loopback, 127.0.0.1, порт 25566. S03_01/S03_02: Client, Loopback, 127.0.0.1, порт 25565. Во всех случаях впишите фактические состояния программ; для базовой проверки это off/off/off.
+Если нужно больше трёх попыток: в Excel перейдите в последнюю ячейку последней строки таблицы «Прогоны» и нажмите Tab — добавится строка. Укажите сценарий, новый ID и NOT_RUN; результаты заполните после теста. Так же добавьте строку того же ID в «Условия прогонов».</p></article></section><section><h2>Результаты и источники</h2><p>PASS — выполнено ожидание данного сценария. FAIL — нарушено. BLOCKED — нет условий. PARTIAL — проверена часть. NOT_RUN — не запускали. Для одного ПК используйте B10; для двух — два ZIP с общим ID и рабочую XLSX.</p><p><a href="https://learn.microsoft.com/en-us/powershell/module/nettcpip/get-netipconfiguration">Локальные адреса/интерфейс</a></p><p><a href="https://learn.microsoft.com/en-us/powershell/module/nettcpip/test-netconnection">TCP и результат TcpTestSucceeded</a></p><p><a href="https://datatracker.ietf.org/doc/html/rfc6598">Общее адресное пространство 100.64.0.0/10</a></p><p><a href="https://prismlauncher.org/wiki/help-pages/zip-import/">Импорт экземпляра Prism из ZIP</a></p></section></main></html>

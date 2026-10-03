@@ -18,8 +18,8 @@ def fake_mod(mod_id,version):
     with zipfile.ZipFile(data,'w') as z:z.writestr('fabric.mod.json',json.dumps({'id':mod_id,'version':version,'authors':[SECRET]}))
     return data.getvalue()
 
-def run(script,*arguments,ok=True):
-    result=subprocess.run(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(script),*map(str,arguments)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=120)
+def run(script,*arguments,ok=True,stdin_text='\n'):
+    result=subprocess.run(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(script),*map(str,arguments)],input=stdin_text.encode('utf-8'),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=120)
     if ok and result.returncode:raise RuntimeError(result.stdout.decode('utf-8',errors='replace'))
     if not ok and not result.returncode:raise AssertionError('Expected installer failure')
     return result
@@ -117,7 +117,15 @@ def test(archive,skyrim_directory):
         long_json=next((base/'long-reports').glob('*/installation.json'))
         long_facts=json.loads(long_json.read_text(encoding='utf-8-sig'))
         assert any(c['Id']=='game_paths' and c['Status']=='FAIL' for c in long_facts['Checks']),long_facts
-        print('FRIEND KIT PASS: checksums/nested runtime ZIPs, isolated update/backup/no-op, renamed duplicate detection, rollback on locked JAR, preserved config/world/account, AUTO/native summary, no secret export, long-path detection')
+        # A user-selected MO2 path may differ from Skyrim/Mods; exercise the actual prompt.
+        selected_mods=base/'chosen MO2 mods';selected_plugin=selected_mods/'SkyCraft/SKSE/Plugins/SkyCraft.dll'
+        selected_plugin.parent.mkdir(parents=True);selected_plugin.write_bytes(native)
+        prompt_reports=base/'prompt-reports'
+        run(check,'-GameDirectory',game,'-SkyrimDirectory',fake,'-OutputDirectory',prompt_reports,stdin_text=str(selected_mods)+'\n')
+        prompt_facts=json.loads(next(prompt_reports.glob('*/installation.json')).read_text(encoding='utf-8-sig'))
+        assert any(c['Path']==str(selected_plugin) for c in prompt_facts['NativePluginCandidates']),prompt_facts
+        assert any(c['Id']=='native_plugin' and c['Status']=='PASS' for c in prompt_facts['Checks'])
+        print('FRIEND KIT PASS: checksums/nested runtime ZIPs, isolated update/backup/no-op, renamed duplicate detection, rollback on locked JAR, preserved config/world/account, AUTO/native summary, no secret export, long-path detection, interactive MO2 path')
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('archive',type=Path);parser.add_argument('--skyrim-directory',type=Path);args=parser.parse_args();test(args.archive,args.skyrim_directory)

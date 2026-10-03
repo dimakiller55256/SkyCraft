@@ -58,7 +58,14 @@ try {
     $details.Skyrim = [ordered]@{Directory=$skyrimPath; Version=$version}
     if ($version -eq $manifest.requirements.skyrimRuntime) { Check 'skyrim_runtime' 'PASS' "Skyrim runtime $version" } else { Check 'skyrim_runtime' 'WARN' "Runtime $version отличается от проверенного $($manifest.requirements.skyrimRuntime); не считать совместимость подтверждённой." }
     if ((Test-Path -LiteralPath (Join-Path $skyrimPath 'skse64_loader.exe')) -and (Test-Path -LiteralPath (Join-Path $skyrimPath $manifest.requirements.skseRuntimeDll))) { Check 'skse_files' 'PASS' 'Есть SKSE loader и DLL для проверенного runtime. Запускайте SKSE через MO2.' } else { Check 'skse_files' 'FAIL' "Не найдены skse64_loader.exe / $($manifest.requirements.skseRuntimeDll) в каталоге игры." }
-    if (-not $ModsDirectory -and (Test-Path -LiteralPath (Join-Path $skyrimPath 'Mods'))) { $ModsDirectory = Join-Path $skyrimPath 'Mods' }
+    if (-not $ModsDirectory) {
+        $suggestedMods = ''
+        if (Test-Path -LiteralPath (Join-Path $skyrimPath 'Mods')) { $suggestedMods = Join-Path $skyrimPath 'Mods' }
+        Write-Host 'Путь модов: MO2 -> Настройки -> Пути -> Моды (Mods). Пусто без подсказки = пропустить поиск в MO2.'
+        $ModsDirectory = Read-Host "Каталог модов MO2 [$suggestedMods]"
+        if ([string]::IsNullOrWhiteSpace($ModsDirectory)) { $ModsDirectory = $suggestedMods }
+        else { $ModsDirectory = $ModsDirectory.Trim('"') }
+    }
     $pluginCandidates = @()
     $libraryCandidates = @()
     $roots = @((Join-Path $skyrimPath 'Data'))

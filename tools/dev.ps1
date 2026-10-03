@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Check', 'BuildFabric', 'BuildSkse')]
+    [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'NetworkSmoke')]
     [string]$Action = 'Check',
     [string]$JavaHome,
     [string]$CMakePath
@@ -50,7 +50,7 @@ if ($Action -eq 'Check') {
     return
 }
 
-if ($Action -eq 'BuildFabric') {
+if ($Action -eq 'BuildFabric' -or $Action -eq 'NetworkSmoke') {
     if (-not $jdkReady) { throw 'Set -JavaHome to a JDK 25 folder, or configure .tools/dev-local.json.' }
     $savedEnvironment = @{}
     foreach ($name in @('JAVA_HOME', 'GRADLE_USER_HOME', 'TEMP', 'TMP')) {
@@ -67,7 +67,17 @@ if ($Action -eq 'BuildFabric') {
         $env:TMP = $tmpPath
         Push-Location (Join-Path $repoRoot 'fabric')
         try {
-            & .\gradlew.bat build --no-daemon --no-configuration-cache --console=plain
+            if ($Action -eq 'NetworkSmoke') {
+                $smokeResult = Join-Path $repoRoot '.tools\network-smoke-game\network-smoke-result.txt'
+                if (Test-Path -LiteralPath $smokeResult) { Remove-Item -LiteralPath $smokeResult }
+                & .\gradlew.bat -PnetworkSmoke runNetworkSmokeClient --no-daemon --no-configuration-cache --console=plain
+                if (-not (Test-Path -LiteralPath $smokeResult) -or
+                    (Get-Content -LiteralPath $smokeResult -Raw).Trim() -ne 'PASS') {
+                    throw 'Minecraft networking smoke check failed; inspect .tools/network-smoke-game/logs/latest.log.'
+                }
+            } else {
+                & .\gradlew.bat build --no-daemon --no-configuration-cache --console=plain
+            }
             if ($LASTEXITCODE -ne 0) { throw "Fabric build failed (exit $LASTEXITCODE)." }
         } finally { Pop-Location }
     } finally {

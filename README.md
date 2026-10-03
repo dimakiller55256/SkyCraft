@@ -113,17 +113,20 @@ Organizer Minecraft stays outside MO2's virtual file system and doesn't keep MO2
 Everyone needs their own Skyrim with SkyCraft. Only the Minecraft world is shared: blocks, items,
 mobs and each other. Up to 100 players. Each player keeps their own Skyrim world, NPCs and quests.
 
-1. **Host:** press **O** (Minecraft's menu), choose **Open to LAN**, then **Start LAN World**.
-   SkyCraft's bundled [e4mc](https://modrinth.com/mod/e4mc) puts a link like `abc-def.e4mc.link`
-   in chat. Click it to copy it, then send it to your friends.
-2. **Friends:** press **T** and type `/join abc-def.e4mc.link`. Your Minecraft leaves its own
-   world and joins the host's.
+1. **Host:** press **T** and type `/skycraft host 25565`. Give your friends an address and port
+   they can reach. The game server stays on your PC; e4mc is no longer bundled.
+2. **Friends:** press **T** and type `/join host.example:25565`. Your Minecraft leaves its own
+   world and joins the host's. Explicit SOCKS5 and HTTP CONNECT settings are supported.
 3. **`/leave`** goes back to your own world. If the host closes their world, you're put back in
    yours automatically.
 
-**With Discord:** your Discord status shows SkyCraft while you play. Once you've opened your world
-to LAN it has a **Join** button (and you can invite friends from a Discord chat). A friend with
-Skyrim and SkyCraft already running clicks it and joins you, no link needed.
+**With Discord:** after hosting, set `/skycraft address host.example:25565` to publish an explicit
+Join address in your Discord status. A friend with Skyrim and SkyCraft running can use it.
+That address must already be reachable; the invitation doesn't open a route through NAT.
+
+**YS network prototype:** [Настройки и проверка сети](docs/YS-NETWORK.md). Direct/proxy connections
+are implemented; NAT traversal and reverse relaying are planned. Compatibility with particular
+VPN/filter combinations and Skyrim Together has not yet been verified.
 
 ## Controls
 

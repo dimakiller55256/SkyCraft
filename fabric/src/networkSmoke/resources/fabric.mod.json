@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "skycraft-network-smoke",
+  "version": "1.0.0",
+  "name": "SkyCraft networking integration check",
+  "environment": "client",
+  "entrypoints": { "client": ["dev.skycraft.test.NetworkSmokeClient"] },
+  "depends": { "skycraft": "*", "fabric-api": "*" }
+}

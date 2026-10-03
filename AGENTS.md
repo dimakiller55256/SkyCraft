@@ -12,6 +12,11 @@ to inspect prerequisites. `BuildFabric` runs the existing Gradle build and
 tests. `BuildSkse` runs CMake with automatic deployment disabled. Local paths
 belong in ignored `.tools/dev-local.json`, not shared source files.
 
+`NetworkSmoke` runs an isolated, automatically closing Minecraft client against
+a local HTTP proxy fixture to verify the actual login handshake and Mixins.
+It requires a working graphics environment. Its output is under
+`.tools/network-smoke-game`, separate from installed Prism instances and saves.
+
 Keep `protocol/skycraft_protocol.h` and the Java `Proto.java` mirror in sync.
 Use the pinned CommonLib submodule. Do not equate a successful Java build
 with verification of C++ hooks or gameplay. Report unrun checks explicitly.

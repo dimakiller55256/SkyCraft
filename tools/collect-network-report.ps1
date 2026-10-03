@@ -15,6 +15,7 @@ param(
     [string]$Notes,
     [string]$OutputDirectory,
     [string]$SkseLog,
+    [switch]$IncludeLatestAutoTrace,
     [switch]$IncludeGameLogs
 )
 $ErrorActionPreference = 'Stop'
@@ -203,6 +204,15 @@ Export-SafeCsv 'tcp-samples.csv' $tcpRows @('utc', 'state', 'pid', 'process', 'l
 $traceDirectory = Join-Path $gamePath 'logs\skycraft-network'
 $traceFiles = @()
 if (Test-Path -LiteralPath $traceDirectory) { $traceFiles = @(Get-ChildItem -LiteralPath $traceDirectory -File -Filter "$RunId-$roleName-*.jsonl*") }
+$autoFallback = $false
+if ($traceFiles.Count -eq 0 -and $IncludeLatestAutoTrace -and (Test-Path -LiteralPath $traceDirectory)) {
+    $latestAuto = Get-ChildItem -LiteralPath $traceDirectory -File -Filter 'AUTO-auto-*.jsonl' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($latestAuto) {
+        $traceFiles = @(Get-ChildItem -LiteralPath $traceDirectory -File -Filter ($latestAuto.Name + '*'))
+        $autoFallback = $true
+        $warnings.Add('Включён последний автоматический лог запуска AUTO/auto. Он не размечает хоста/клиента и не заменяет debug start для сетевого прогона.')
+    }
+}
 $traceEvents = New-Object 'System.Collections.Generic.List[object]'
 $invalidLines = 0
 if ($traceFiles.Count -eq 0) { $warnings.Add('Нет лога с нужным ID/ролью. В игре выполните /skycraft debug start ID host или client. Этот отчёт всё равно содержит снимок Windows.') }
@@ -214,7 +224,7 @@ else {
             foreach ($line in Get-Content -LiteralPath (Join-Path $traceOutput $file.Name) -Encoding UTF8) {
                 try {
                     $event = $line | ConvertFrom-Json
-                    if ($event.run_id -eq $RunId -and $event.role -eq $roleName) { $traceEvents.Add($event) }
+                    if (($event.run_id -eq $RunId -and $event.role -eq $roleName) -or ($autoFallback -and $event.run_id -eq 'AUTO' -and $event.role -eq 'auto')) { $traceEvents.Add($event) }
                 } catch { $invalidLines++ }
             }
         } catch { $collectorErrors.Add([pscustomobject]@{Section = 'trace-copy'; ErrorType = $_.Exception.GetType().Name; HResult = $_.Exception.HResult}) }
@@ -226,6 +236,7 @@ $pingSamples = @($traceEvents | Where-Object { $_.event -eq 'sample' -and $null 
 $joinSamples = @($traceEvents | Where-Object { $_.event -eq 'world_join' -and $_.result -eq 'remote' } | ForEach-Object { $_.elapsed_ms })
 $summary = [ordered]@{
     RunId = $RunId; Role = $roleName; Result = $Result; TraceFiles = $traceFiles.Count; Events = $traceEvents.Count
+    AutoTraceFallback = $autoFallback
     InvalidOrPartialLines = $invalidLines; TraceStopped = [bool]($traceEvents | Where-Object event -eq 'trace_closed')
     PingSamples = $pingSamples.Count; PingMeanMs = $null; PingMaxMs = $null; RemoteJoinElapsedMs = $joinSamples
     TcpSamples = $tcpRows.Count; CollectionErrors = $collectorErrors.Count
@@ -234,6 +245,25 @@ $summary = [ordered]@{
 }
 if ($pingSamples.Count -gt 0) { $summary.PingMeanMs = [Math]::Round(($pingSamples | Measure-Object -Average).Average, 1); $summary.PingMaxMs = ($pingSamples | Measure-Object -Maximum).Maximum }
 if ($invalidLines -gt 0 -or ($traceFiles.Count -gt 0 -and -not $summary.TraceStopped)) { $warnings.Add('Лог мог ещё записываться. Для окончательного отчёта выполните debug stop, подождите 2 секунды и повторите сбор с WatchSeconds=0.') }
+if (-not $SkseLog) { $SkseLog = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'My Games\Skyrim Special Edition\SKSE\SkyCraft.log' }
+try {
+    $nativeSummary = [ordered]@{Present=(Test-Path -LiteralPath $SkseLog); Source='Selected facts only; raw native log is not copied by default'}
+    if ($nativeSummary.Present) {
+        $nativeFile = Get-Item -LiteralPath $SkseLog
+        $nativeLines = @(Get-Content -LiteralPath $SkseLog -Encoding UTF8 -TotalCount 45) + @(Get-Content -LiteralPath $SkseLog -Encoding UTF8 -Tail 100)
+        $nativeText = $nativeLines -join "`n"
+        $nativeSummary.LastWriteUtc = $nativeFile.LastWriteTimeUtc.ToString('o')
+        $nativeSummary.Size = $nativeFile.Length
+        $nativeSummary.Runtime = if ($nativeText -match 'loading \(runtime ([0-9-]+)\)') { $matches[1] } else { $null }
+        $nativeSummary.SharedMemoryCreated = [bool]($nativeText -match 'shared memory Local\\SkyCraft_v1')
+        $nativeSummary.GameHooksInstalled = [bool]($nativeText -match 'game hooks installed')
+        $nativeSummary.TextureReceived = [bool]($nativeText -match 'received Minecraft texture atlas')
+        $nativeSummary.CameraControlledByMinecraft = [bool]($nativeText -match 'Minecraft now drives camera rotation')
+        $nativeSummary.Note = 'Facts may be from an older launch. Compare LastWriteUtc with run.json and the trace UTC; only head/tail were inspected.'
+    }
+    Save-Json 'skyrim-startup.json' $nativeSummary
+} catch { $collectorErrors.Add([pscustomobject]@{Section='native-summary'; ErrorType=$_.Exception.GetType().Name; HResult=$_.Exception.HResult}) }
+$summary.CollectionErrors = $collectorErrors.Count
 Save-Json 'summary.json' $summary
 Save-Json 'collection-errors.json' @($collectorErrors.ToArray())
 Save-Json 'warnings.json' @($warnings.ToArray())
@@ -242,6 +272,10 @@ if ($IncludeGameLogs) {
     if (Test-Path -LiteralPath $gameLog) { Copy-Item -LiteralPath $gameLog -Destination (Join-Path $reportPath 'minecraft-latest.log') }
     if (-not $SkseLog) { $SkseLog = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'My Games\Skyrim Special Edition\SKSE\SkyCraft.log' }
     if (Test-Path -LiteralPath $SkseLog) { Copy-Item -LiteralPath $SkseLog -Destination (Join-Path $reportPath 'SkyCraft-SKSE.log') }
+    foreach ($name in @('skse64.log','skse64_loader.log')) {
+        $path = Join-Path (Split-Path -Parent $SkseLog) $name
+        if (Test-Path -LiteralPath $path) { Copy-Item -LiteralPath $path -Destination $reportPath }
+    }
 }
 @"
 SkyCraft — локальный сетевой отчёт

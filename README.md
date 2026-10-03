@@ -3,6 +3,8 @@
 Доработки YS: [настройки сети](docs/YS-NETWORK.md),
 [инструкция тестов для хоста и клиента](docs/YS-TESTING.md),
 [таблица Excel](docs/testing/SkyCraft-Network-Tests.xlsx),
+[пакет для друга](docs/YS-FRIEND.md),
+[подробная инструкция HTML](docs/testing/ИНСТРУКЦИЯ.html),
 [диагностика закрытия Skyrim при запуске](docs/YS-STARTUP.md).
 
 ![SkyCraft: a Minecraft player walking through Riverwood with the Minecraft HUD](docs/screenshot.jpg)

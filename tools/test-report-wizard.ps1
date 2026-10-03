@@ -12,7 +12,7 @@ function Choice([string]$label, [string]$default, [string[]]$choices) {
 Write-Host 'SkyCraft: сбор локального сетевого отчёта. Настройки Windows не меняются.'
 Write-Host 'В игре завершите прогон: /skycraft debug stop, затем подождите 2 секунды.'
 $suggestedGame = ''
-foreach ($candidate in @('D:\PrismLauncher\instances\SkyCraft\minecraft', (Join-Path $env:APPDATA 'PrismLauncher\instances\SkyCraft\minecraft'))) {
+foreach ($candidate in @((Join-Path $env:LOCALAPPDATA 'SkyCraft\Prism\instances\SkyCraft\.minecraft'), 'D:\PrismLauncher\instances\SkyCraft\minecraft', (Join-Path $env:APPDATA 'PrismLauncher\instances\SkyCraft\minecraft'), (Join-Path $env:APPDATA 'PrismLauncher\instances\SkyCraft\.minecraft'))) {
     if (Test-Path -LiteralPath (Join-Path $candidate 'mods')) { $suggestedGame = $candidate; break }
 }
 $gameDirectory = Ask 'Каталог Minecraft (с папкой mods)' $suggestedGame

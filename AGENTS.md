@@ -11,6 +11,9 @@ Use `powershell -ExecutionPolicy Bypass -File tools/dev.ps1 -Action Check`
 to inspect prerequisites. `BuildFabric` runs the existing Gradle build and
 tests. `BuildSkse` runs CMake with automatic deployment disabled. Local paths
 belong in ignored `.tools/dev-local.json`, not shared source files.
+Gradle caches must be outside Skyrim's game directory. `dev.ps1` defaults to
+`%LOCALAPPDATA%/SkyCraft/Gradle`; configure `gradleUserHome` for another path.
+The game can scan disabled MO2 mod folders and fail on paths of 260 bytes.
 
 `NetworkSmoke` runs an isolated, automatically closing Minecraft client against
 a local HTTP proxy fixture to verify the actual login handshake and Mixins.

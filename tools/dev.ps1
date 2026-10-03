@@ -3,7 +3,8 @@ param(
     [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'NetworkSmoke')]
     [string]$Action = 'Check',
     [string]$JavaHome,
-    [string]$CMakePath
+    [string]$CMakePath,
+    [string]$GradleUserHome
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,6 +16,22 @@ if (Test-Path -LiteralPath $configPath) {
 }
 if (-not $JavaHome) { $JavaHome = $localConfig.javaHome }
 if (-not $JavaHome) { $JavaHome = $env:JAVA_HOME }
+if (-not $GradleUserHome) { $GradleUserHome = $localConfig.gradleUserHome }
+if (-not $GradleUserHome) { $GradleUserHome = Join-Path $env:LOCALAPPDATA 'SkyCraft\Gradle' }
+$GradleUserHome = [IO.Path]::GetFullPath($GradleUserHome)
+# Skyrim recursively scans Mods during startup. Build caches can exceed its
+# 260-byte path buffer, even when the addon is disabled in MO2.
+$cacheAncestor = $GradleUserHome
+$cacheInsideGame = $false
+while ($cacheAncestor) {
+    if (Test-Path -LiteralPath (Join-Path $cacheAncestor 'SkyrimSE.exe')) {
+        $cacheInsideGame = $true
+        break
+    }
+    $cacheParent = Split-Path -Parent $cacheAncestor
+    if ($cacheParent -eq $cacheAncestor) { break }
+    $cacheAncestor = $cacheParent
+}
 if (-not $CMakePath) { $CMakePath = $localConfig.cmakePath }
 if (-not $CMakePath) {
     $cmakeCommand = Get-Command cmake -ErrorAction SilentlyContinue
@@ -39,6 +56,8 @@ if ($Action -eq 'Check') {
     [pscustomobject]@{
         Repository = $repoRoot
         JavaHome = $JavaHome
+        GradleUserHome = $GradleUserHome
+        GradleCacheOutsideSkyrim = -not $cacheInsideGame
         JdkPresent = [bool]$jdkReady
         VisualStudio2026Cpp = $vsRoot
         CMake = $CMakePath
@@ -52,6 +71,7 @@ if ($Action -eq 'Check') {
 
 if ($Action -eq 'BuildFabric' -or $Action -eq 'NetworkSmoke') {
     if (-not $jdkReady) { throw 'Set -JavaHome to a JDK 25 folder, or configure .tools/dev-local.json.' }
+    if ($cacheInsideGame) { throw 'Gradle cache must be outside the Skyrim game directory. Set -GradleUserHome or .tools/dev-local.json.' }
     $savedEnvironment = @{}
     foreach ($name in @('JAVA_HOME', 'GRADLE_USER_HOME', 'TEMP', 'TMP')) {
         $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
@@ -60,7 +80,7 @@ if ($Action -eq 'BuildFabric' -or $Action -eq 'NetworkSmoke') {
     New-Item -ItemType Directory -Path $tmpPath -Force | Out-Null
     try {
         $env:JAVA_HOME = $JavaHome
-        $env:GRADLE_USER_HOME = Join-Path $repoRoot '.tools\gradle-user-home'
+        $env:GRADLE_USER_HOME = $GradleUserHome
         # The desktop environment's default TEMP failed Java's AF_UNIX loopback.
         # This process-local directory lets Gradle establish its local connection.
         $env:TEMP = $tmpPath

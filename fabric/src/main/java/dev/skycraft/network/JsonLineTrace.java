@@ -25,7 +25,9 @@ public final class JsonLineTrace implements AutoCloseable {
 		"remote_address", "remote_port", "local_address", "local_port", "receiving", "exception_type",
 		"status_code", "elapsed_ms", "ping_ms", "upload_bytes", "download_bytes", "player_count",
 		"skyrim_linked", "published", "host_port", "marker", "mc_version", "mod_version", "fabric_version",
-		"java_version", "os_name", "os_version", "reason_code", "peer_host", "peer_port");
+		"java_version", "os_name", "os_version", "reason_code", "peer_host", "peer_port",
+		"reason", "mc_x", "mc_y", "mc_z", "sky_x", "sky_y", "sky_z", "teleport_seq",
+		"session", "command", "request_id", "check", "success");
 	private final Path file;
 	private final String runId, role;
 	private final int maxBytes, backups;

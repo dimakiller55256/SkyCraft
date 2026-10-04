@@ -15,13 +15,17 @@ class JsonLineTraceTest {
 		Path file = directory.resolve("test.jsonl");
 		var trace = new JsonLineTrace(file, "A01_1", "client");
 		trace.event("marker", Map.of("marker", "Блок виден\nсо второй стороны", "password", "never-write-password",
-			"username", "never-write-user", "token", "never-write-token", "config", Map.of("secret", "never-write-config")));
+			"username", "never-write-user", "token", "never-write-token", "config", Map.of("secret", "never-write-config"),
+			"mc_x", 123.25, "sky_x", 124.25, "request_id", 7));
 		trace.close(); assertTrue(trace.awaitClosed(Duration.ofSeconds(3)));
 		String text = Files.readString(file);
 		assertFalse(text.contains("never-write"));
 		var first = JsonParser.parseString(text.lines().findFirst().orElseThrow()).getAsJsonObject();
 		assertEquals("A01_1", first.get("run_id").getAsString());
 		assertEquals("Блок виден\nсо второй стороны", first.get("marker").getAsString());
+		assertEquals(123.25, first.get("mc_x").getAsDouble());
+		assertEquals(124.25, first.get("sky_x").getAsDouble());
+		assertEquals(7, first.get("request_id").getAsInt());
 		assertEquals(2, text.lines().count());
 		assertNull(trace.errorType());
 	}

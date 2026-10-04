@@ -6,7 +6,7 @@ import re
 from network_test_guide import BASICS, REPORTS, SOLO, PREPARATION, ADDRESSES, TRANSPORTS, STEPS, DATA, FAILURES, SOURCES
 
 ROOT = Path(__file__).resolve().parents[1]
-INTRO = ('Сборка 0.1.2-ys.network.2: Minecraft 26.3, Fabric Loader 0.19.5, Fabric API 0.161.0+26.3, Java 25. '
+INTRO = ('Сборка 0.1.2-ys.network.3: Minecraft 26.3, Fabric Loader 0.19.5, Fabric API 0.161.0+26.3, Java 25. '
          'Проверенный Skyrim runtime 1.7.104.0, SKSE 2.3.1. На текущем ПК проверены запуск, HUD и движение. '
          'Совместные квесты Skyrim Together и конвертация предметов пока не реализованы.')
 CSS = '''body{font:17px/1.65 system-ui,sans-serif;color:#213547;background:#f5f8fc;margin:0}

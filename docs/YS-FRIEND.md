@@ -1,11 +1,14 @@
 # Пакет SkyCraft YS для друга
 
-Сборка Java `0.1.2-ys.network.2`; исходная SKSE DLL `0.1.2` взята из
+Сборка Java `0.1.2-ys.network.3`; исходная SKSE DLL `0.1.2` взята из
 [официального релиза](https://github.com/chasmlol/SkyCraft/releases/tag/v0.1.2).
 Её SHA256 совпадает с DLL, на которой владелец проверил меню, HUD и движение.
 Пакет рассчитан на одинаковое проверенное окружение: Skyrim 1.7.104.0,
 SKSE 2.3.1, Address Library для этого runtime, Minecraft 26.3, Fabric Loader
 0.19.5, Fabric API 0.161.0+26.3, Java 25.
+
+Для минимального ручного ввода используйте [автоматический помощник](YS-AUTOTEST.md):
+SkyCraft-Хост.exe, SkyCraft-Клиент.exe и SkyCraft-Без-друга.exe из нового комплекта.
 
 ## Если исходный SkyCraft 0.1.2 уже работает
 

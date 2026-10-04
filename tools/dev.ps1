@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'NetworkSmoke')]
+    [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'NetworkSmoke', 'AssistantWorldSmoke')]
     [string]$Action = 'Check',
     [string]$JavaHome,
     [string]$CMakePath,
@@ -69,7 +69,7 @@ if ($Action -eq 'Check') {
     return
 }
 
-if ($Action -eq 'BuildFabric' -or $Action -eq 'NetworkSmoke') {
+if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke')) {
     if (-not $jdkReady) { throw 'Set -JavaHome to a JDK 25 folder, or configure .tools/dev-local.json.' }
     if ($cacheInsideGame) { throw 'Gradle cache must be outside the Skyrim game directory. Set -GradleUserHome or .tools/dev-local.json.' }
     $savedEnvironment = @{}
@@ -87,7 +87,14 @@ if ($Action -eq 'BuildFabric' -or $Action -eq 'NetworkSmoke') {
         $env:TMP = $tmpPath
         Push-Location (Join-Path $repoRoot 'fabric')
         try {
-            if ($Action -eq 'NetworkSmoke') {
+            if ($Action -eq 'AssistantWorldSmoke') {
+                if (Get-Process -Name SkyrimSE -ErrorAction SilentlyContinue) { throw 'Close Skyrim normally before an isolated shared-memory client check.' }
+                $worldResult = Join-Path $repoRoot '.tools\assistant-world-smoke\assistant-world-smoke-result.txt'
+                if (Test-Path -LiteralPath $worldResult) { Remove-Item -LiteralPath $worldResult }
+                & .\gradlew.bat -PnetworkSmoke -PassistantWorldSmoke runNetworkSmokeClient --no-daemon --no-configuration-cache --console=plain
+                if (-not (Test-Path -LiteralPath $worldResult) -or (Get-Content -LiteralPath $worldResult -Raw).Trim() -ne 'PASS') { throw 'Assistant world smoke failed; inspect .tools/assistant-world-smoke/logs/latest.log.' }
+            } elseif ($Action -eq 'NetworkSmoke') {
+                if (Get-Process -Name SkyrimSE -ErrorAction SilentlyContinue) { throw 'Close Skyrim normally before an isolated shared-memory client check.' }
                 $smokeResult = Join-Path $repoRoot '.tools\network-smoke-game\network-smoke-result.txt'
                 if (Test-Path -LiteralPath $smokeResult) { Remove-Item -LiteralPath $smokeResult }
                 & .\gradlew.bat -PnetworkSmoke runNetworkSmokeClient --no-daemon --no-configuration-cache --console=plain

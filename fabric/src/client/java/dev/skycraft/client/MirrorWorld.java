@@ -67,6 +67,7 @@ public final class MirrorWorld {
 	}
 
 	private static void leaveWorld(Minecraft minecraft) {
+		NetworkDiagnostics.position("before_world_leave", minecraft);
 		NetworkClient.cancel();
 		attempted = false;
 		minecraft.disconnectFromWorld(net.minecraft.client.multiplayer.ClientLevel.DEFAULT_QUIT_MESSAGE);
@@ -153,6 +154,7 @@ public final class MirrorWorld {
 	}
 
 	public static void connectionFailed(Minecraft minecraft, String reason) {
+		NetworkDiagnostics.position("connection_failed", minecraft);
 		NetworkDiagnostics.event("return_to_own_world", java.util.Map.of("attempt_id", NetworkClient.activeAttempt()));
 		pendingNote = "SkyCraft: " + reason + " Возвращаюсь в свой мир.";
 		SkyCraft.LOG.info("SkyCraft network: {}", pendingNote);

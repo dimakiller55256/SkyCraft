@@ -129,6 +129,7 @@ public final class SkyClient {
 			teleportPending = true;
 		}
 		if (teleportPending && sky.inGame() && !sky.loading()) {
+			NetworkDiagnostics.position("before_skyrim_teleport", minecraft);
 			requestTeleport(minecraft, sky.x, sky.y, sky.z, sky.yaw, sky.pitch);
 			teleportAck = sky.teleportSeq;
 			teleportPending = false;

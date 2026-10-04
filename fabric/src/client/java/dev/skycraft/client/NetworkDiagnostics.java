@@ -59,7 +59,7 @@ public final class NetworkDiagnostics {
 		});
 	}
 
-	private static void start(String runId, String role) {
+	public static void start(String runId, String role) {
 		if (!runId.matches("[A-Za-z0-9_-]{1,64}") || !java.util.Set.of("host", "client", "auto").contains(role)) throw new IllegalArgumentException();
 		JsonLineTrace old = trace;
 		String stamp = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC).format(Instant.now());
@@ -126,7 +126,22 @@ public final class NetworkDiagnostics {
 		if (upload >= 0) { fields.put("upload_bytes", upload); fields.put("download_bytes", download); }
 		event("sample", fields);
 	}
+	public static void position(String reason, Minecraft minecraft) {
+		Map<String, Object> fields = new LinkedHashMap<>();
+		fields.put("reason", reason);
+		fields.put("skyrim_linked", SkyLink.active());
+		if (minecraft.player != null) {
+			fields.put("mc_x", minecraft.player.getX()); fields.put("mc_y", minecraft.player.getY()); fields.put("mc_z", minecraft.player.getZ());
+		}
+		if (SkyLink.active()) {
+			var sky = SkyClient.sky();
+			fields.put("sky_x", sky.x); fields.put("sky_y", sky.y); fields.put("sky_z", sky.z);
+			fields.put("teleport_seq", sky.teleportSeq);
+		}
+		event("position", fields);
+	}
 	public static void stop() { JsonLineTrace old = trace; trace = null; if (old != null) old.close(); }
+	public static String traceFileName() { JsonLineTrace current = trace; return current == null ? "" : current.file().getFileName().toString(); }
 	public static void shutdown() {
 		JsonLineTrace old = trace; stop();
 		if (old != null) try { old.awaitClosed(Duration.ofSeconds(2)); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }

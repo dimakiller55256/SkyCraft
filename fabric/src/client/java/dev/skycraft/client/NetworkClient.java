@@ -32,18 +32,24 @@ public final class NetworkClient {
 	private static volatile long activeAttempt;
 	private static long connectStarted;
 	private static boolean joined;
+	private static NetworkConfig testConfig;
 	public static long activeAttempt() { return activeAttempt; }
 
 	private NetworkClient() { }
 
 	public static NetworkConfig config(Minecraft minecraft) throws IOException {
+		if (testConfig != null) return testConfig;
 		return NetworkConfig.load(minecraft.gameDirectory.toPath().resolve("config/skycraft.properties"));
 	}
+
+	/** A leased test session can select transport without editing the user's properties. */
+	public static void testConfig(NetworkConfig value) { testConfig = value; }
 
 	public static void register() {
 		ClientLifecycleEvents.CLIENT_STOPPING.register(minecraft -> { cancel(); NetworkDiagnostics.shutdown(); });
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, minecraft) -> {
 			joined = true;
+			NetworkDiagnostics.position("world_join", minecraft);
 			NetworkDiagnostics.event("world_join", java.util.Map.of("attempt_id", activeAttempt, "result", minecraft.isLocalServer() ? "local" : "remote",
 				"elapsed_ms", connectStarted == 0 ? 0 : (System.nanoTime() - connectStarted) / 1_000_000L));
 		});
@@ -78,7 +84,7 @@ public final class NetworkClient {
 		});
 	}
 
-	private static void host(Minecraft minecraft, Integer portOverride) {
+	public static void host(Minecraft minecraft, Integer portOverride) {
 		try {
 			NetworkConfig config = config(minecraft);
 			var server = minecraft.getSingleplayerServer();

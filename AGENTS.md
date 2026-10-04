@@ -19,6 +19,9 @@ The game can scan disabled MO2 mod folders and fail on paths of 260 bytes.
 a local HTTP proxy fixture to verify the actual login handshake and Mixins.
 It requires a working graphics environment. Its output is under
 `.tools/network-smoke-game`, separate from installed Prism instances and saves.
+`AssistantWorldSmoke` exercises file control, host/probe/failed join/recovery in
+a separate `.tools/assistant-world-smoke` Minecraft world without Skyrim; it
+refuses to run while Skyrim is open. It does not establish two-PC gameplay.
 
 Keep `protocol/skycraft_protocol.h` and the Java `Proto.java` mirror in sync.
 Use the pinned CommonLib submodule. Do not equate a successful Java build

@@ -15,6 +15,7 @@ param(
     [string]$Notes,
     [string]$OutputDirectory,
     [string]$SkseLog,
+    [ValidatePattern('^[A-Za-z0-9_.-]+\.jsonl$')][string]$TraceFileName,
     [switch]$IncludeLatestAutoTrace,
     [switch]$IncludeGameLogs
 )
@@ -203,7 +204,11 @@ Export-SafeCsv 'tcp-samples.csv' $tcpRows @('utc', 'state', 'pid', 'process', 'l
 
 $traceDirectory = Join-Path $gamePath 'logs\skycraft-network'
 $traceFiles = @()
-if (Test-Path -LiteralPath $traceDirectory) { $traceFiles = @(Get-ChildItem -LiteralPath $traceDirectory -File -Filter "$RunId-$roleName-*.jsonl*") }
+if ($TraceFileName -and -not $TraceFileName.StartsWith("$RunId-$roleName-",[StringComparison]::Ordinal)) { throw 'Trace filename does not match run/role.' }
+if (Test-Path -LiteralPath $traceDirectory) {
+    $pattern = if ($TraceFileName) { $TraceFileName + '*' } else { "$RunId-$roleName-*.jsonl*" }
+    $traceFiles = @(Get-ChildItem -LiteralPath $traceDirectory -File -Filter $pattern)
+}
 $autoFallback = $false
 if ($traceFiles.Count -eq 0 -and $IncludeLatestAutoTrace -and (Test-Path -LiteralPath $traceDirectory)) {
     $latestAuto = Get-ChildItem -LiteralPath $traceDirectory -File -Filter 'AUTO-auto-*.jsonl' | Sort-Object LastWriteTime -Descending | Select-Object -First 1

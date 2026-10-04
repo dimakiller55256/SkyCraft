@@ -9,6 +9,7 @@
     "ClientLevelDigMixin",
     "ConnectionHandshakeMixin",
     "ConnectionDiagnosticsMixin",
+    "DisconnectedScreenAccessor",
     "EntityCollideMixin",
     "FramerateLimitTrackerMixin",
     "InputConstantsMixin",

@@ -53,6 +53,11 @@ function Get-Process {
         run(command())
         installed=game/'mods'/manifest['fabricJar']['file'];assert hashlib.sha256(installed.read_bytes()).hexdigest()==manifest['fabricJar']['sha256']
         assert all((game/p).read_bytes()==value for p,value in before.items())
+        environment=base/'environment.json'
+        plan.write_text(json.dumps({'action':'environment','output':str(environment),'targets':['127.0.0.1']}),encoding='utf-8')
+        run(command());snapshot=json.loads(environment.read_text(encoding='utf-8-sig'))
+        assert snapshot['schema']==1 and snapshot['selectedRoutes'] and not snapshot['collectionErrors'],snapshot
+        assert 'CommandLine' not in environment.read_text(encoding='utf-8-sig') and SECRET not in environment.read_text(encoding='utf-8-sig')
         events=[{'schema':1,'utc':'2026-10-04T14:00:00Z','run_id':'AUTO_TEST','role':'client','event':'sample','skyrim_linked':False},
                 {'schema':1,'utc':'2026-10-04T14:00:01Z','run_id':'AUTO_TEST','role':'client','event':'trace_closed','dropped_events':0}]
         (game/'logs/skycraft-network/AUTO_TEST-client-fixture.jsonl').write_text('\n'.join(json.dumps(e) for e in events)+'\n',encoding='utf-8')
@@ -68,7 +73,7 @@ function Get-Process {
             assert not any(n.endswith('.log') or 'accounts' in n or 'properties' in n for n in z.namelist())
         assert all((game/p).read_bytes()==value for p,value in before.items())
         plan.write_text(json.dumps({'action':'exec','game':str(game)}));run(command(),ok=False)
-        print('AUTO ASSISTANT PASS: distributable checksums, EXE 8 checks, worker update with backup, preserved config/account/world, noninteractive collector with zero errors, no synthetic secrets, unknown action rejected')
+        print('AUTO ASSISTANT PASS: distributable checksums, EXE self-checks, worker update with backup, preserved config/account/world, collector and environment with zero errors, no synthetic secrets, unknown action rejected')
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('archive',type=Path);args=parser.parse_args();test(args.archive)

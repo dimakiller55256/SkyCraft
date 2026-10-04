@@ -18,6 +18,8 @@ public final class MirrorWorld {
 	private static final ResourceKey<WorldPreset> PRESET =
 		ResourceKey.create(Registries.WORLD_PRESET, Identifier.fromNamespaceAndPath(SkyCraft.MOD_ID, "mirror"));
 	private static boolean attempted;
+	private static long joinRequest;
+	public static long joinRequest() { return joinRequest; }
 	private static long lastLog;
 	private static boolean readConfiguredJoin = true;
 	// A friend's world for this session; null: our own.
@@ -39,6 +41,7 @@ public final class MirrorWorld {
 			return;
 		}
 		SkyCraft.LOG.info("SkyCraft: /join {}", address);
+		joinRequest++;
 		sessionJoin = address;
 		readConfiguredJoin = false;
 		leaveWorld(minecraft);
@@ -68,6 +71,7 @@ public final class MirrorWorld {
 
 	private static void leaveWorld(Minecraft minecraft) {
 		NetworkDiagnostics.position("before_world_leave", minecraft);
+		SkyClient.worldTransition();
 		NetworkClient.cancel();
 		attempted = false;
 		minecraft.disconnectFromWorld(net.minecraft.client.multiplayer.ClientLevel.DEFAULT_QUIT_MESSAGE);
@@ -90,6 +94,8 @@ public final class MirrorWorld {
 		}
 		// Couldn't reach a friend's world, or it closed under us: back to our own, and say why.
 		if (minecraft.gui.screen() instanceof net.minecraft.client.gui.screens.DisconnectedScreen && minecraft.level == null) {
+			var details = ((dev.skycraft.client.mixin.DisconnectedScreenAccessor) minecraft.gui.screen()).skycraft$details();
+			NetworkClient.recordFailure("disconnect_screen", details.reason().getString(), "minecraft_disconnect");
 			connectionFailed(minecraft, NetworkClient.lastFailure() != null ? NetworkClient.lastFailure()
 				: "Соединение закрыто. Проверьте адрес, доступность хоста и журнал Minecraft.");
 			return;
@@ -154,6 +160,8 @@ public final class MirrorWorld {
 	}
 
 	public static void connectionFailed(Minecraft minecraft, String reason) {
+		NetworkClient.recordFailure("recovery", reason, "connection_failed");
+		SkyClient.worldTransition();
 		NetworkDiagnostics.position("connection_failed", minecraft);
 		NetworkDiagnostics.event("return_to_own_world", java.util.Map.of("attempt_id", NetworkClient.activeAttempt()));
 		pendingNote = "SkyCraft: " + reason + " Возвращаюсь в свой мир.";

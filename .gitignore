@@ -19,3 +19,5 @@ CMakeUserPresets.json
 fabric/run-guest*/
 __pycache__/
 *.pyc
+
+fabric/logs/

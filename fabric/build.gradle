@@ -64,8 +64,8 @@ if (providers.gradleProperty("networkSmoke").isPresent()) {
 				client()
 				sourceSet = sourceSets.networkSmoke.name
 					runDirectory = file(providers.gradleProperty("assistantWorldSmoke").isPresent() ? "../.tools/assistant-world-smoke" : "../.tools/network-smoke-game")
-					vmArgs "--enable-native-access=ALL-UNNAMED", "-Dskycraft.startHidden=true", "-Dskycraft.quitWithSkyrim=false", "-Dskycraft.discordAppId=0"
-					if (providers.gradleProperty("assistantWorldSmoke").isPresent()) vmArgs "-Dskycraft.assistantWorldSmoke=true"
+					vmArgs "--enable-native-access=ALL-UNNAMED", "-Dskycraft.startHidden=true", "-Dskycraft.quitWithSkyrim=false", "-Dskycraft.discordAppId=0", "-Dskycraft.link=Local\\SkyCraft_network_smoke"
+					if (providers.gradleProperty("assistantWorldSmoke").isPresent()) vmArgs "-Dskycraft.assistantWorldSmoke=true", "-Dskycraft.link=Local\\SkyCraft_world_smoke"
 				programArgs "--username", "NetworkSmoke"
 			}
 		}

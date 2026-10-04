@@ -91,7 +91,17 @@ if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke')) {
                 if (Get-Process -Name SkyrimSE -ErrorAction SilentlyContinue) { throw 'Close Skyrim normally before an isolated shared-memory client check.' }
                 $worldResult = Join-Path $repoRoot '.tools\assistant-world-smoke\assistant-world-smoke-result.txt'
                 if (Test-Path -LiteralPath $worldResult) { Remove-Item -LiteralPath $worldResult }
-                & .\gradlew.bat -PnetworkSmoke -PassistantWorldSmoke runNetworkSmokeClient --no-daemon --no-configuration-cache --console=plain
+                $fixtureResult = Join-Path $repoRoot '.tools\assistant-world-smoke\position-fixture-result.json'
+                New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureResult) -Force | Out-Null
+                if (Test-Path -LiteralPath $fixtureResult) { Remove-Item -LiteralPath $fixtureResult }
+                $python = if ($localConfig.python) { $localConfig.python } else { (Get-Command python -ErrorAction Stop).Source }
+                $fixtureScript = Join-Path $repoRoot 'tools\sync-smoke-fixture.py'
+                $fixture = Start-Process -FilePath $python -ArgumentList @('-u', ('"' + $fixtureScript + '"'), ('"' + $fixtureResult + '"')) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $repoRoot '.tools\assistant-world-smoke\fixture-output.txt') -RedirectStandardError (Join-Path $repoRoot '.tools\assistant-world-smoke\fixture-errors.txt')
+                try {
+                    & .\gradlew.bat -PnetworkSmoke -PassistantWorldSmoke runNetworkSmokeClient --no-daemon --no-configuration-cache --console=plain
+                    if (-not $fixture.WaitForExit(10000)) { throw 'Position fixture did not finish.' }
+                    if (-not (Test-Path -LiteralPath $fixtureResult) -or (Get-Content -LiteralPath $fixtureResult -Raw | ConvertFrom-Json).result -ne 'PASS') { throw 'Unsafe position publication; inspect position-fixture-result.json.' }
+                } finally { if (-not $fixture.HasExited) { $fixture.Kill() }; $fixture.Dispose() }
                 if (-not (Test-Path -LiteralPath $worldResult) -or (Get-Content -LiteralPath $worldResult -Raw).Trim() -ne 'PASS') { throw 'Assistant world smoke failed; inspect .tools/assistant-world-smoke/logs/latest.log.' }
             } elseif ($Action -eq 'NetworkSmoke') {
                 if (Get-Process -Name SkyrimSE -ErrorAction SilentlyContinue) { throw 'Close Skyrim normally before an isolated shared-memory client check.' }

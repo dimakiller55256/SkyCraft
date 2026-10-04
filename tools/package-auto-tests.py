@@ -17,7 +17,7 @@ def build(friend, output):
             assert hashlib.sha256(z.read(name)).hexdigest()==expected,name
         manifest=json.loads(z.read('package-manifest.json'))
         names={'SkyCraft-Хост.exe','SkyCraft-Клиент.exe','SkyCraft-Без-друга.exe','АВТОТЕСТЫ.html','LICENSE.txt','THIRD-PARTY-NOTICES.md',manifest['fabricJar']['file']}
-        names.update('tools/'+name for name in ['assistant-worker.ps1','skycraft-package-common.ps1','install-friend-update.ps1','check-friend-installation.ps1','collect-network-report.ps1'])
+        names.update('tools/'+name for name in ['assistant-worker.ps1','skycraft-package-common.ps1','install-friend-update.ps1','check-friend-installation.ps1','collect-network-report.ps1','collect-test-environment.ps1'])
         names.update(name for name in z.namelist() if name.startswith('docs/'))
         entries={name:z.read(name) for name in names}
     manifest.pop('mo2Archive');manifest.pop('prismInstance')
@@ -27,9 +27,9 @@ def build(friend, output):
         '1. Распаковать весь ZIP вне Skyrim.\r\n'
         '2. Открыть АВТОТЕСТЫ.html.\r\n'
         '3. Выбрать SkyCraft-Хост.exe / SkyCraft-Клиент.exe / SkyCraft-Без-друга.exe.\r\n'
-        '4. При закрытых Skyrim/Minecraft нажать «Обновить мод»: нужен network.3 на обоих ПК.\r\n'
+        '4. При закрытых Skyrim/Minecraft нажать «Обновить мод»: нужен network.4 на обоих ПК.\r\n'
         '5. MO2/SKSE -> отдельное тестовое сохранение -> помощник -> «Начать автотест».\r\n'
-        '6. Хост передаёт код SCY1 клиенту; после теста «Открыть отчёты».\r\n'
+        '6. Хост передаёт новый код SCY2 клиенту; после теста «Открыть отчёты».\r\n'
         'В маленьком комплекте нет полного MO2/Prism для новой установки; для неё нужен friend-kit.\r\n').encode('utf-8-sig')
     entries['SHA256.txt']=''.join(package.sha(value)+'  '+name+'\n' for name,value in sorted(entries.items())).encode('utf-8')
     output.mkdir(parents=True,exist_ok=True)

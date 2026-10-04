@@ -28,6 +28,9 @@ public final class NetworkClient {
 	private static volatile int bridgePort;
 	private static GenericWaitingScreen waiting;
 	private static volatile String failure;
+	private static volatile java.util.Map<String, Object> failureDetails = java.util.Map.of();
+	private static volatile java.util.Map<String, Object> peerSession = java.util.Map.of();
+	public static java.util.Map<String, Object> peerSession() { return peerSession; }
 	private static boolean checking;
 	private static volatile long activeAttempt;
 	private static long connectStarted;
@@ -46,6 +49,11 @@ public final class NetworkClient {
 	public static void testConfig(NetworkConfig value) { testConfig = value; }
 
 	public static void register() {
+		net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(dev.skycraft.net.SkyNet.TestSession.TYPE, (payload, context) -> {
+			if (!payload.runId().isEmpty() && !payload.runId().matches("[A-Za-z0-9_-]{1,64}")) return;
+			peerSession = java.util.Map.of("runId", payload.runId(), "version", dev.skycraft.network.DiagnosticText.safe(payload.version()));
+			NetworkDiagnostics.event("peer_session", java.util.Map.of("session", payload.runId(), "mod_version", dev.skycraft.network.DiagnosticText.safe(payload.version())));
+		});
 		ClientLifecycleEvents.CLIENT_STOPPING.register(minecraft -> { cancel(); NetworkDiagnostics.shutdown(); });
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, minecraft) -> {
 			joined = true;
@@ -105,6 +113,8 @@ public final class NetworkClient {
 	public static void connect(Minecraft minecraft, TitleScreen title, Endpoint endpoint) {
 		cancel();
 		failure = null;
+		failureDetails = java.util.Map.of();
+		peerSession = java.util.Map.of();
 		activeAttempt = NetworkDiagnostics.nextId();
 		connectStarted = System.nanoTime(); joined = false;
 		long traceAttempt = activeAttempt;
@@ -172,6 +182,16 @@ public final class NetworkClient {
 	}
 
 	public static String lastFailure() { return failure; }
+	public static java.util.Map<String, Object> failureDetails() { return failureDetails; }
+	public static synchronized void recordFailure(String phase, String message, String code) {
+		if (!failureDetails.isEmpty()) return; // Preserve the first cause through cancel/recovery.
+		String safe = dev.skycraft.network.DiagnosticText.safe(message);
+		failure = safe;
+		failureDetails = java.util.Map.of("attempt_id", activeAttempt, "phase", phase, "reason", safe,
+			"reason_code", dev.skycraft.network.DiagnosticText.safe(code), "request", MirrorWorld.joinRequest());
+		NetworkDiagnostics.event("disconnect_reason", failureDetails);
+		SkyCraft.LOG.info("SkyCraft network: disconnect during {}: {}", phase, safe);
+	}
 
 	public static void cancel() {
 		if (activeAttempt != 0) NetworkDiagnostics.event("transport_close", java.util.Map.of("attempt_id", activeAttempt,

@@ -20,7 +20,15 @@ import net.minecraft.server.level.ServerPlayer;
  * host's server through these packets instead.
  */
 public final class SkyNet {
+	public static volatile String testRunId = "";
 	private SkyNet() {
+	}
+	/** Metadata for pairing reports; does not grant access or change login authentication. */
+	public record TestSession(String runId, String version) implements CustomPacketPayload {
+		public static final Type<TestSession> TYPE = new Type<>(Identifier.fromNamespaceAndPath(SkyCraft.MOD_ID, "test_session"));
+		public static final StreamCodec<RegistryFriendlyByteBuf, TestSession> CODEC = StreamCodec.composite(
+			ByteBufCodecs.stringUtf8(64), TestSession::runId, ByteBufCodecs.stringUtf8(64), TestSession::version, TestSession::new);
+		@Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
 	}
 
 	/** Guest -> server: the guest's Skyrim hit them (as proto::InputEvent kInHurt). */
@@ -84,6 +92,12 @@ public final class SkyNet {
 	}
 
 	public static void init() {
+		PayloadTypeRegistry.clientboundPlay().register(TestSession.TYPE, TestSession.CODEC);
+		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+			if (ServerPlayNetworking.canSend(handler.player, TestSession.TYPE))
+				ServerPlayNetworking.send(handler.player, new TestSession(testRunId,
+					net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("skycraft").orElseThrow().getMetadata().getVersion().getFriendlyString()));
+		});
 		PayloadTypeRegistry.serverboundPlay().register(Hurt.TYPE, Hurt.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(DigOpen.TYPE, DigOpen.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(DigReveal.TYPE, DigReveal.CODEC);

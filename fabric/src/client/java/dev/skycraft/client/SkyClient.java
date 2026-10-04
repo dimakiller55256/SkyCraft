@@ -36,6 +36,7 @@ public final class SkyClient {
 	private static int teleportAck;
 	private static boolean teleportPending;
 	private static LocalPlayer lastPlayer;
+	private static final dev.skycraft.link.PlayerSyncGate publication = new dev.skycraft.link.PlayerSyncGate();
 	private static Vec3 holdPos;
 	private static Vec3 unlinkedHold;
 	private static long holdSince;
@@ -64,6 +65,19 @@ public final class SkyClient {
 
 	public static SkyLink.SkyState sky() {
 		return sky;
+	}
+	public static boolean positionReady() {
+		return linked && publication.observe(Minecraft.getInstance().player, sky.teleportSeq) && !teleportPending && holdPos == null;
+	}
+	public static void worldTransition() {
+		publication.invalidate(); lastPlayer = null; teleportPending = true; holdPos = null; holdSince = 0;
+		if (linked) suppressPublication();
+	}
+	private static void suppressPublication() {
+		mc.flags &= ~Proto.MC_IN_WORLD;
+		mc.teleportAck = sky.teleportSeq - 1;
+		mc.tickQpc = 0;
+		SkyLink.writeMcState(mc);
 	}
 
 	/** Start of Minecraft.runTick: pull state and input from Skyrim before anything else runs. */
@@ -114,6 +128,7 @@ public final class SkyClient {
 		ProxySync.frame(minecraft);
 
 		LocalPlayer player = minecraft.player;
+		publication.observe(player, sky.teleportSeq);
 		if (player == null) {
 			lastPlayer = null;
 			return;
@@ -133,6 +148,7 @@ public final class SkyClient {
 			requestTeleport(minecraft, sky.x, sky.y, sky.z, sky.yaw, sky.pitch);
 			teleportAck = sky.teleportSeq;
 			teleportPending = false;
+			publication.initialized(player, sky.teleportSeq);
 			holdPos = new Vec3(sky.x, sky.y, sky.z);
 		}
 
@@ -223,6 +239,8 @@ public final class SkyClient {
 		if (!linked || player == null) {
 			return;
 		}
+		// A player can be created inside this tick, after beginFrame has already run.
+		if (!publication.observe(player, sky.teleportSeq) || teleportPending) { suppressPublication(); return; }
 		if (qpcFreq == 0) {
 			qpcFreq = SkyLink.qpcFrequency();
 		}
@@ -260,6 +278,7 @@ public final class SkyClient {
 		if (!linked || player == null) {
 			return;
 		}
+		if (!publication.observe(player, sky.teleportSeq)) return;
 		if (!sky.inGame() || sky.loading()) {
 			// Skyrim is on its main menu or a loading screen: park the player where they are.
 			if (holdPos == null) {
@@ -308,6 +327,11 @@ public final class SkyClient {
 	private static void requestTeleport(Minecraft minecraft, double x, double y, double z, float yaw, float pitch) {
 		LocalPlayer player = minecraft.player;
 		player.setPos(x, y, z);
+		player.xo = x; player.yo = y; player.zo = z;
+		mc.prevX = mc.curX = mc.x = x;
+		mc.prevY = mc.curY = mc.y = y;
+		mc.prevZ = mc.curZ = mc.z = z;
+		mc.tickQpc = 0;
 		player.setDeltaMovement(Vec3.ZERO);
 		player.resetFallDistance();
 		var server = minecraft.getSingleplayerServer();
@@ -334,7 +358,8 @@ public final class SkyClient {
 		Minecraft minecraft = Minecraft.getInstance();
 		LocalPlayer player = minecraft.player;
 		int flags = 0;
-		if (player != null && minecraft.level != null) {
+		boolean initialized = publication.observe(player, sky.teleportSeq) && !teleportPending;
+		if (player != null && minecraft.level != null && initialized) {
 			float partial = minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(false);
 			Vec3 feet = player.getPosition(partial);
 			Camera camera = minecraft.gameRenderer.mainCamera();
@@ -383,7 +408,8 @@ public final class SkyClient {
 		}
 		mc.flags = flags;
 		mc.sensitivity = minecraft.options.sensitivity().get().floatValue();
-		mc.teleportAck = holdPos == null ? teleportAck : teleportAck - 1; // not "arrived" until we are released
+		mc.teleportAck = initialized && holdPos == null ? teleportAck : sky.teleportSeq - 1;
+		if (!initialized) mc.tickQpc = 0;
 		mc.guiScale = minecraft.getWindow().getGuiScale();
 		mc.frameCounter = ++frameCounter;
 		SkyLink.writeMcState(mc);

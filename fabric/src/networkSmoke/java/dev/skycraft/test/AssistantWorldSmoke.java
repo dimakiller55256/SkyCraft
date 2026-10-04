@@ -24,6 +24,7 @@ final class AssistantWorldSmoke {
 	private long deadline, issuedAt;
 	private int step, hostPort, closedPort;
 	private boolean finished;
+	private int recoveries;
 	private Path directory;
 	private net.minecraft.client.player.LocalPlayer before;
 	void initialize() {
@@ -57,6 +58,26 @@ final class AssistantWorldSmoke {
 			JsonObject state = JsonParser.parseString(Files.readString(directory.resolve("state.json"))).getAsJsonObject();
 			if (!session.equals(state.get("session").getAsString()) || state.get("id").getAsInt() != step || state.get("result").getAsString().equals("running")) return;
 			if (!state.get("result").getAsString().equals("ok") && step != 5) throw new java.io.IOException("Command failed at " + step);
+			if (step >= 6 && step < 15) {
+				switch ((step - 6) % 3) {
+					case 0 -> {
+						if (mc.player == null || mc.player == before || !mc.isLocalServer() || !dev.skycraft.client.SkyClient.positionReady()) return;
+						var reason = state.getAsJsonObject("lastFailure");
+						if (!reason.has("reason") || reason.get("reason").getAsString().isEmpty()) throw new java.io.IOException("Lost failed-join reason");
+						if (Math.abs(mc.player.getX() - 100000.5) > .5 || Math.abs(mc.player.getY() - 100) > .5 || Math.abs(mc.player.getZ() - .5) > .5) throw new java.io.IOException("Recovery reset player position");
+						recoveries++;
+						request(step + 1, "host", Map.of("port", hostPort));
+					}
+					case 1 -> request(step + 1, "probe", Map.of("target", "127.0.0.1:" + hostPort));
+					case 2 -> {
+						if (!state.getAsJsonObject("detail").get("success").getAsBoolean()) throw new java.io.IOException("Restored server unavailable");
+						if (recoveries == 3) request(step + 1, "stop", Map.of());
+						else { before = mc.player; request(step + 1, "join", Map.of("target", "127.0.0.1:" + closedPort)); }
+					}
+				}
+				step++; return;
+			}
+			if (step == 15) {Files.delete(directory.resolve("lease.json"));finish(mc, "PASS");return;}
 			switch (step) {
 				case 1 -> request(2, "configure", Map.of("mode", "DIRECT"));
 				case 2 -> request(3, "host", Map.of("port", hostPort));
@@ -66,6 +87,7 @@ final class AssistantWorldSmoke {
 				}
 				case 4 -> {
 					if (!state.getAsJsonObject("detail").get("success").getAsBoolean()) throw new java.io.IOException("Host probe failed");
+					if (!state.getAsJsonObject("peerSession").has("version") || !state.getAsJsonObject("peerSession").get("version").getAsString().equals("0.1.2-ys.network.4")) throw new java.io.IOException("Server session metadata missing");
 					request(5, "probe", Map.of("target", "127.0.0.1:" + closedPort));
 				}
 				case 5 -> {

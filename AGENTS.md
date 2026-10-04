@@ -22,6 +22,11 @@ It requires a working graphics environment. Its output is under
 `AssistantWorldSmoke` exercises file control, host/probe/failed join/recovery in
 a separate `.tools/assistant-world-smoke` Minecraft world without Skyrim; it
 refuses to run while Skyrim is open. It does not establish two-PC gameplay.
+It now uses an isolated shared-memory stand-in (`sync-smoke-fixture.py`, Python)
+and verifies three recoveries plus native-style position feedback. Configure
+the optional `python` path in ignored `.tools/dev-local.json` when needed.
+`create-retest-table.py` adds the automatic network.4 plan to the workbook;
+run it after the legacy `create-network-test-kit.py` generator.
 
 Keep `protocol/skycraft_protocol.h` and the Java `Proto.java` mirror in sync.
 Use the pinned CommonLib submodule. Do not equate a successful Java build

@@ -1,4 +1,4 @@
-// .NET Framework Windows Forms; no Python, account or installation required.
+﻿// .NET Framework Windows Forms; no Python, account or installation required.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -99,8 +99,9 @@ namespace SkyCraftTests {
                     var ip=address.Address;
                     if(IPAddress.IsLoopback(ip) || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast || ip.ToString().StartsWith("169.254.")) continue;
                     if(ip.AddressFamily!=AddressFamily.InterNetwork && ip.AddressFamily!=AddressFamily.InterNetworkV6) continue;
-                    bool overlay=Regex.IsMatch(adapter.Name+" "+adapter.Description,"Radmin|Hamachi|Tailscale|WireGuard|Cloudflare|WARP",RegexOptions.IgnoreCase);
-                    rows.Add(Data.Obj("ip",ip.ToString(),"scope",overlay?"overlay":Global(ip)?"global":"lan","interface",adapter.Name,"type",adapter.NetworkInterfaceType.ToString(),"gateways",props.GatewayAddresses.Select(g=>g.Address.ToString()).ToArray(),"dns",props.DnsAddresses.Select(g=>g.ToString()).ToArray()));
+                    string provider=Regex.IsMatch(adapter.Name+" "+adapter.Description,"Radmin",RegexOptions.IgnoreCase)?"radmin":Regex.IsMatch(adapter.Name+" "+adapter.Description,"Hamachi",RegexOptions.IgnoreCase)?"hamachi":Regex.IsMatch(adapter.Name+" "+adapter.Description,"Tailscale",RegexOptions.IgnoreCase)?"tailscale":"";
+                    bool overlay=provider!="";
+                    rows.Add(Data.Obj("ip",ip.ToString(),"scope",overlay?"overlay":Global(ip)?"global":"lan","provider",provider,"interface",adapter.Name,"type",adapter.NetworkInterfaceType.ToString(),"gateways",props.GatewayAddresses.Select(g=>g.Address.ToString()).ToArray(),"dns",props.DnsAddresses.Select(g=>g.ToString()).ToArray()));
                 }
             }
             return rows;
@@ -118,7 +119,7 @@ namespace SkyCraftTests {
                     if(match.Success) return match.Groups[1].Value;
                 }
             } } catch { }
-            return "127.0.0.1:8080";
+            return "";
         }
         public static async Task<Dictionary<string,object>> PublicIp() {
             var attempts=new List<Dictionary<string,object>>();
@@ -145,22 +146,29 @@ namespace SkyCraftTests {
             } catch(Exception e) { return Data.Obj("error",e.GetType().Name,"source",endpoint); }
         }
     }
+    static class Assessment {
+        public static bool SessionMatches(Dictionary<string,object> peer,string runId) {return Data.Str(peer,"runId")==runId && Data.Str(peer,"version")=="0.1.2-ys.network.4";}
+        public static double Distance(Dictionary<string,object> a,Dictionary<string,object> b) {
+            double x=Convert.ToDouble(a["x"])-Convert.ToDouble(b["x"]),y=Convert.ToDouble(a["y"])-Convert.ToDouble(b["y"]),z=Convert.ToDouble(a["z"])-Convert.ToDouble(b["z"]);
+            return Math.Sqrt(x*x+y*y+z*z);
+        }
+    }
     sealed class Invitation {
         public string RunId; public List<Dictionary<string,object>> Addresses; public DateTime Expires;
-        public string Encode() { return "SCY1:"+Convert.ToBase64String(Encoding.UTF8.GetBytes(Data.Json(Data.Obj("schema",1,"runId",RunId,"expiresUtc",Expires.ToString("o"),"addresses",Addresses)))); }
+        public string Encode() { return "SCY2:"+Convert.ToBase64String(Encoding.UTF8.GetBytes(Data.Json(Data.Obj("schema",2,"version","0.1.2-ys.network.4","runId",RunId,"expiresUtc",Expires.ToString("o"),"addresses",Addresses)))); }
         public static Invitation Decode(string text) {
-            if(text.Length>12000 || !text.StartsWith("SCY1:")) throw new ArgumentException("Вставьте весь код хоста, начиная с SCY1:.");
+            if(text.Length>12000 || !text.StartsWith("SCY2:")) throw new ArgumentException("Вставьте весь код хоста, начиная с SCY2:.");
             var d=Data.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(text.Substring(5).Trim())));
             string id=Data.Str(d,"runId");
             DateTime expiry=DateTime.Parse(Data.Str(d,"expiresUtc")).ToUniversalTime();
-            if(Data.Int(d,"schema")!=1 || !Regex.IsMatch(id,"^[A-Za-z0-9_-]{1,64}$") || expiry<DateTime.UtcNow || expiry>DateTime.UtcNow.AddHours(25)) throw new ArgumentException("Код повреждён или устарел. Попросите новый код хоста.");
+            if(Data.Int(d,"schema")!=2 || Data.Str(d,"version")!="0.1.2-ys.network.4" || !Regex.IsMatch(id,"^[A-Za-z0-9_-]{1,64}$") || expiry<DateTime.UtcNow || expiry>DateTime.UtcNow.AddMinutes(31)) throw new ArgumentException("Код повреждён или устарел. Попросите новый код хоста.");
             var rows=new List<Dictionary<string,object>>();
             foreach(object item in (System.Collections.IEnumerable)d["addresses"]) {
                 var address=(Dictionary<string,object>)item; IPAddress ip;
                 int port=Data.Int(address,"port"); string scope=Data.Str(address,"scope");
                 if(!IPAddress.TryParse(Data.Str(address,"ip"),out ip) || port<1 || port>65535 || rows.Count>=16 || scope!="lan" && scope!="global" && scope!="overlay" || IPAddress.IsLoopback(ip) || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast || ip.Equals(IPAddress.Any) || ip.Equals(IPAddress.IPv6Any) || ip.AddressFamily==AddressFamily.InterNetwork && ip.GetAddressBytes()[0]>=224) throw new ArgumentException("Недопустимый адрес в коде хоста.");
                 if(scope!="overlay" && (scope=="global")!=Discovery.Global(ip)) throw new ArgumentException("Неверный тип адреса в коде.");
-                rows.Add(Data.Obj("ip",ip.ToString(),"port",port,"scope",scope));
+                rows.Add(Data.Obj("ip",ip.ToString(),"port",port,"scope",scope,"provider",Data.Str(address,"provider")));
             }
             return new Invitation {RunId=id,Expires=expiry,Addresses=rows};
         }
@@ -192,7 +200,7 @@ namespace SkyCraftTests {
                 }
                 await Task.Delay(250,token);
             }
-            throw new TimeoutException("Мод не ответил. Нужен SkyCraft network.3; игра должна работать, а сохранение — быть загружено.");
+            throw new TimeoutException("Мод не ответил. Нужен SkyCraft network.4; игра должна работать, а сохранение — быть загружено.");
         }
         public void Dispose() { disposed=true; heartbeat.Dispose(); try { var lease=Data.Read(Path.Combine(dir,"lease.json")); if(Data.Str(lease,"session")==session) File.Delete(Path.Combine(dir,"lease.json")); } catch { } }
     }
@@ -204,7 +212,12 @@ namespace SkyCraftTests {
         readonly TextBox proxy=new TextBox {Width=160};
         readonly TextBox invite=new TextBox {Multiline=true,Height=65,Dock=DockStyle.Fill,ScrollBars=ScrollBars.Vertical};
         readonly TextBox output=new TextBox {Multiline=true,ReadOnly=true,Dock=DockStyle.Fill,ScrollBars=ScrollBars.Vertical};
-        readonly TextBox skyrim=new TextBox {Width=500};
+        readonly TextBox skyrim=new TextBox {Width=370};
+        readonly TextBox mods=new TextBox {Width=370};
+        readonly TextBox conditions=new TextBox {Width=540};
+        readonly ComboBox hud=new ComboBox {DropDownStyle=ComboBoxStyle.DropDownList,Width=140};
+        readonly ComboBox movement=new ComboBox {DropDownStyle=ComboBoxStyle.DropDownList,Width=140};
+        readonly ComboBox blocks=new ComboBox {DropDownStyle=ComboBoxStyle.DropDownList,Width=140};
         readonly CheckBox publicIp=new CheckBox {Text="Найти внешний IP через HTTPS ipify",Checked=true,AutoSize=true};
         readonly Button start=new Button {Text="Начать автотест",AutoSize=true};
         readonly Button stop=new Button {Text="Остановить и собрать отчёт",AutoSize=true,Enabled=false};
@@ -213,29 +226,38 @@ namespace SkyCraftTests {
         readonly Button open=new Button {Text="Открыть отчёты",AutoSize=true};
         readonly Label status=new Label {Text="Выберите роль и нажмите «Начать автотест».",AutoSize=true};
         readonly string package=AppDomain.CurrentDomain.BaseDirectory;
-        string reportRoot,runId,gamePath,skyrimPath,modsPath,target="",roleName,networkLabel,selectedMode,proxyText,traceName=""; int networkKind;
+        string reportRoot,runId,gamePath,skyrimPath,modsPath,target="",roleName,networkLabel,selectedMode,proxyText,traceName=""; int networkKind; int pendingJoinRequest;
         Bridge bridge; CancellationTokenSource cancel; readonly List<Dictionary<string,object>> checks=new List<Dictionary<string,object>>();
-        bool working,closing; DateTime started; string finalArchive;
+        bool working,closing; DateTime started; string finalArchive; string[] routeTargets=new string[0];
         public HelperForm(string initialRole) {
-            Text="SkyCraft — автоматические тесты"; Size=new Size(960,740); MinimumSize=new Size(800,650); Font=new Font("Segoe UI",10);
+            Text="SkyCraft — автоматические тесты"; Size=new Size(1020,860); MinimumSize=new Size(950,820); Font=new Font("Segoe UI",10);
             role.Items.AddRange(new object[]{"Хост","Клиент","Без друга"}); role.SelectedIndex=initialRole=="client"?1:initialRole=="solo"?2:0;
             network.Items.AddRange(new object[]{"Разные сети","Одна локальная сеть","Общая виртуальная сеть"}); network.SelectedIndex=0;
-            mode.Items.AddRange(new object[]{"Как в настройках SkyCraft","DIRECT","SOCKS5","HTTP_CONNECT"}); mode.SelectedIndex=0; proxy.Text=Discovery.ProxyHint();
-            var root=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=10,Padding=new Padding(12)};
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Absolute,75)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent,100)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            mode.Items.AddRange(new object[]{"Как в настройках SkyCraft","DIRECT","SOCKS5","HTTP_CONNECT"}); mode.SelectedIndex=1; proxy.Text=Discovery.ProxyHint(); proxy.Enabled=false;
+            mode.SelectedIndexChanged+=(sender,e)=>proxy.Enabled=mode.SelectedIndex>=2 && !working;
+            var root=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=11,Padding=new Padding(12)};
+            for(int row=0;row<11;row++) root.RowStyles.Add(new RowStyle(row==8?SizeType.Percent:row==5?SizeType.Absolute:SizeType.AutoSize,row==8?100:row==5?75:0));
             root.Controls.Add(new Label {Text="Запустите Skyrim через MO2/SKSE и загрузите отдельное тестовое сохранение. Чат и IP вручную вводить не нужно.",AutoSize=true},0,0);
             var paths=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill}; paths.Controls.Add(new Label {Text="Minecraft:",AutoSize=true}); paths.Controls.Add(game);
             var browse=new Button {Text="Выбрать папку",AutoSize=true}; paths.Controls.Add(browse); browse.Click+=(s,e)=>{using(var dialog=new FolderBrowserDialog()) if(dialog.ShowDialog()==DialogResult.OK) game.Text=dialog.SelectedPath;}; root.Controls.Add(paths,0,1);
             var skyRow=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill}; skyRow.Controls.Add(new Label {Text="Skyrim:",AutoSize=true}); skyRow.Controls.Add(skyrim);
-            var skyBrowse=new Button {Text="Выбрать",AutoSize=true}; skyRow.Controls.Add(skyBrowse); skyBrowse.Click+=(s,e)=>{using(var dialog=new FolderBrowserDialog()) if(dialog.ShowDialog()==DialogResult.OK) skyrim.Text=dialog.SelectedPath;}; root.Controls.Add(skyRow,0,2);
-            var options=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill}; options.Controls.Add(role); options.Controls.Add(network); options.Controls.Add(mode); options.Controls.Add(proxy); root.Controls.Add(options,0,3);
-            root.Controls.Add(publicIp,0,4); root.Controls.Add(invite,0,5);
+            var skyBrowse=new Button {Text="Выбрать",AutoSize=true}; skyRow.Controls.Add(skyBrowse); skyBrowse.Click+=(s,e)=>{using(var dialog=new FolderBrowserDialog()) if(dialog.ShowDialog()==DialogResult.OK) skyrim.Text=dialog.SelectedPath;}; skyRow.Controls.Add(new Label {Text="Моды MO2:",AutoSize=true}); skyRow.Controls.Add(mods);
+            var modsBrowse=new Button {Text="Выбрать моды",AutoSize=true}; skyRow.Controls.Add(modsBrowse); modsBrowse.Click+=(sender,e)=>{using(var dialog=new FolderBrowserDialog()) if(dialog.ShowDialog()==DialogResult.OK) mods.Text=dialog.SelectedPath;}; root.Controls.Add(skyRow,0,2);
+            var options=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill};
+            foreach(var pair in new[]{new {Name="Роль:",Control=(Control)role},new {Name="Сеть:",Control=(Control)network},new {Name="Транспорт:",Control=(Control)mode},new {Name="Прокси:",Control=(Control)proxy}}) {options.Controls.Add(new Label {Text=pair.Name,AutoSize=true}); options.Controls.Add(pair.Control);} root.Controls.Add(options,0,3);
+            var conditionRow=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill}; conditionRow.Controls.Add(publicIp); conditionRow.Controls.Add(new Label {Text="Условия / имя теста:",AutoSize=true}); conditionRow.Controls.Add(conditions); root.Controls.Add(conditionRow,0,4); root.Controls.Add(invite,0,5);
             var actions=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill}; foreach(var control in new Control[]{start,stop,copy,update,open}) actions.Controls.Add(control); root.Controls.Add(actions,0,6);
-            root.Controls.Add(output,0,7); root.Controls.Add(status,0,8);
-            root.Controls.Add(new Label {Text="Отчёт остаётся на ПК. Код содержит адреса хоста. Внешний IP при VPN может принадлежать VPN; доступность проверяет клиент.",AutoSize=true},0,9);
+            var visual=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill};
+            foreach(var pair in new[]{new {Name="HUD",Control=hud},new {Name="Движение",Control=movement},new {Name="Блоки у обоих",Control=blocks}}) {
+                visual.Controls.Add(new Label {Text=pair.Name,AutoSize=true}); pair.Control.Items.AddRange(new object[]{"Не проверено","Работает","Ошибка"});pair.Control.SelectedIndex=0;visual.Controls.Add(pair.Control);
+            }
+            var help=new Button {Text="Инструкция",AutoSize=true};help.Click+=(sender,e)=>{string file=Path.Combine(package,"АВТОТЕСТЫ.html");if(File.Exists(file))Process.Start(file);};visual.Controls.Add(help);root.Controls.Add(visual,0,7);
+            root.Controls.Add(output,0,8); root.Controls.Add(status,0,9);
+            root.Controls.Add(new Label {Text="Отчёт остаётся на ПК. Код содержит адреса хоста. Внешний IP при VPN может принадлежать VPN; доступность проверяет клиент.",AutoSize=true},0,10);
             Controls.Add(root);
-            foreach(string p in Discovery.Games()) game.Items.Add(p); if(game.Items.Count>0) game.SelectedIndex=0; skyrim.Text=Discovery.Skyrim();
-            start.Click+=async(s,e)=>await Run(); stop.Click+=(s,e)=>{if(cancel!=null) cancel.Cancel();}; copy.Click+=(s,e)=>{if(invite.Text.StartsWith("SCY1:")) { Clipboard.SetText(invite.Text); Log("Код скопирован. Передайте его другу любым привычным способом."); }};
+            foreach(string p in Discovery.Games()) game.Items.Add(p); if(game.Items.Count>0) game.SelectedIndex=0; skyrim.Text=Discovery.Skyrim(); mods.Text=Directory.Exists(Path.Combine(skyrim.Text,"Mods"))?Path.Combine(skyrim.Text,"Mods"):"";
+            try {var prefs=Data.Read(Path.Combine(Discovery.SettingsDir,"preferences.json")); if(Directory.Exists(Data.Str(prefs,"mods")))mods.Text=Data.Str(prefs,"mods");}catch{}
+            start.Click+=async(s,e)=>await Run(); stop.Click+=(s,e)=>{if(cancel!=null) cancel.Cancel();}; copy.Click+=(s,e)=>{if(invite.Text.StartsWith("SCY2:")) { Clipboard.SetText(invite.Text); Log("Код скопирован. Передайте его другу любым привычным способом."); }};
             open.Click+=(s,e)=>{string path=reportRoot==null?Path.Combine(Discovery.SettingsDir,"reports"):Path.GetDirectoryName(reportRoot); Directory.CreateDirectory(path); Process.Start(path);};
             update.Click+=async(s,e)=>await UpdateMod();
             FormClosing+=(s,e)=>{if(working) {e.Cancel=true; closing=true; cancel.Cancel(); Log("Завершаю тест и собираю отчёт перед закрытием…");}};
@@ -247,38 +269,40 @@ namespace SkyCraftTests {
             var watch=Stopwatch.StartNew();
             while(watch.Elapsed.TotalSeconds<seconds) {
                 token.ThrowIfCancellationRequested(); var state=bridge.State();
-                if(Data.Str(state,"world")==world) return state;
-                if(world=="remote" && Data.Str(state,"world")=="local") throw new IOException("Вход отклонён; мод вернулся в собственный мир.");
+                if(Data.Str(state,"world")==world && (world!="local" || Data.Bool(state,"positionReady"))) return state;
+                if(world=="remote" && Data.Str(state,"world")=="local" && Data.Int(Data.Sub(state,"lastFailure"),"request")==pendingJoinRequest && pendingJoinRequest>0)
+                    throw new IOException("TCP был доступен; Minecraft отказал на этапе "+Data.Str(Data.Sub(state,"lastFailure"),"phase")+": "+Data.Str(Data.Sub(state,"lastFailure"),"reason"));
                 await Task.Delay(500,token);
             }
             throw new TimeoutException("Не дождался мира «"+world+"». Проверьте запуск, сохранение и соединение.");
         }
         async Task Ready(CancellationToken token) {
-            Log("Ожидаю SkyCraft network.3 и загруженное тестовое сохранение (до 10 минут)…");
+            Log("Ожидаю SkyCraft network.4 и загруженное тестовое сохранение (до 10 минут)…");
             var watch=Stopwatch.StartNew();
             while(watch.Elapsed.TotalSeconds<600) {
                 token.ThrowIfCancellationRequested(); var state=bridge.State();
-                if(Data.Str(state,"world")!="none" && state.Count>0 && Data.Bool(state,"skyrimReady")) return;
+                if(Data.Str(state,"world")!="none" && state.Count>0 && Data.Bool(state,"skyrimReady") && Data.Bool(state,"positionReady")) return;
                 await Task.Delay(500,token);
             }
-            throw new TimeoutException("Нет связи с Skyrim. Проверьте версию network.3, загрузку тестового сохранения и папку Minecraft.");
+            throw new TimeoutException("Нет связи с Skyrim. Проверьте версию network.4, загрузку тестового сохранения и папку Minecraft.");
         }
         async Task Run() {
             if(working) return;
             try {
                 gamePath=Path.GetFullPath(game.Text.Trim().Trim('"'));
                 if(!Discovery.ValidGame(gamePath)) throw new ArgumentException("Не найдена папка Minecraft со SkyCraft JAR. В Prism: экземпляр → Папка Minecraft.");
-                if(Discovery.SkyVersion(gamePath)!="0.1.2-ys.network.3") throw new IOException("Для помощника нужен SkyCraft network.3. Закройте Skyrim и Minecraft, нажмите «Обновить мод», затем запустите игру снова.");
-                skyrimPath=skyrim.Text.Trim().Trim('"'); modsPath=Directory.Exists(Path.Combine(skyrimPath,"Mods"))?Path.Combine(skyrimPath,"Mods"):"NOT_FOUND";
+                if(Discovery.SkyVersion(gamePath)!="0.1.2-ys.network.4") throw new IOException("Для помощника нужен SkyCraft network.4. Закройте Skyrim и Minecraft, нажмите «Обновить мод», затем запустите игру снова.");
+                skyrimPath=skyrim.Text.Trim().Trim('"'); modsPath=Directory.Exists(mods.Text.Trim())?Path.GetFullPath(mods.Text.Trim()):"NOT_FOUND";
                 roleName=role.SelectedIndex==0?"host":"client"; networkKind=network.SelectedIndex; networkLabel=role.SelectedIndex==2?"Loopback":networkKind>0?"LAN":"Internet";
                 selectedMode=mode.SelectedIndex==0?"CURRENT":Convert.ToString(mode.SelectedItem); proxyText=proxy.Text.Trim();
                 Invitation received=role.SelectedIndex==1?Invitation.Decode(invite.Text.Trim()):null;
+                routeTargets=received==null?new string[0]:received.Addresses.Select(a=>Data.Str(a,"ip")).ToArray();
                 runId=received==null?"A"+DateTime.UtcNow.ToString("yyyyMMdd_HHmmss")+"_"+Guid.NewGuid().ToString("N").Substring(0,6):received.RunId;
-                started=DateTime.UtcNow; checks.Clear(); target=""; traceName=""; finalArchive=null;
+                started=DateTime.UtcNow; checks.Clear(); pendingJoinRequest=0; target=""; hud.SelectedIndex=movement.SelectedIndex=blocks.SelectedIndex=0; traceName=""; finalArchive=null;
                 reportRoot=Path.Combine(Discovery.SettingsDir,"reports",runId+"-"+roleName+"-"+Guid.NewGuid().ToString("N").Substring(0,6)); Directory.CreateDirectory(reportRoot);
-                Data.Atomic(Path.Combine(Discovery.SettingsDir,"preferences.json"),Data.Obj("game",gamePath,"skyrim",skyrimPath));
+                Data.Atomic(Path.Combine(Discovery.SettingsDir,"preferences.json"),Data.Obj("game",gamePath,"skyrim",skyrimPath,"mods",modsPath));
                 working=true; start.Enabled=false; stop.Enabled=true; update.Enabled=false;
-                foreach(Control c in new Control[]{game,role,network,mode,proxy,skyrim,publicIp}) c.Enabled=false;
+                foreach(Control c in new Control[]{game,role,network,mode,proxy,skyrim,mods,conditions,publicIp}) c.Enabled=false;
                 invite.ReadOnly=true;
                 cancel=new CancellationTokenSource(); bridge=new Bridge(gamePath); var token=cancel.Token;
                 var addresses=Discovery.Addresses(); var observed=publicIp.Checked?await Discovery.PublicIp():Data.Obj("source","disabled");
@@ -286,20 +310,35 @@ namespace SkyCraftTests {
                 Check("ADDRESS_DISCOVERY",addresses.Count>0?"PASS":"PARTIAL","Найдено адресов: "+addresses.Count+"; внешний IP: "+(Data.Str(observed,"ip")==""?"не определён":Data.Str(observed,"ip"))+".");
                 await Ready(token);
                 var startReply=await bridge.Send("start",Data.Obj("runId",runId,"role",roleName),token); traceName=Data.Str(startReply,"traceFile");
+                if(role.SelectedIndex!=1) selectedMode="DIRECT";
                 if(selectedMode!="CURRENT") await bridge.Send("configure",Data.Obj("mode",selectedMode,"proxy",proxyText),token);
+                Data.Atomic(Path.Combine(reportRoot,"initial-state.json"),bridge.State());
+                await Snapshot("before");
+                if(role.SelectedIndex==1) await ProxyPreflight(token);
                 var transport=await bridge.Send("transport",null,token);
                 Check("TRANSPORT_SELF_CHECK",Data.Bool(Data.Sub(transport,"detail"),"success")?"PASS":"FAIL",Data.Json(Data.Sub(transport,"detail")));
+                if(!Data.Bool(Data.Sub(transport,"detail"),"success")) throw new IOException("TRANSPORT_SELF_CHECK_FAILED: локальные проверки транспорта не прошли; дальнейший сетевой тест остановлен.");
                 if(role.SelectedIndex==2) await Solo(token);
                 else if(role.SelectedIndex==0) await Host(addresses,observed,token);
                 else await Client(received,token);
             } catch(OperationCanceledException) { Check("RUN","PARTIAL","Остановлено пользователем; завершённые проверки сохранены."); }
             catch(Exception e) { Check("RUN","BLOCKED",e.Message); }
             {
+                if(working && bridge!=null) {Data.Atomic(Path.Combine(reportRoot,"last-state.json"),bridge.State());
+                    foreach(var pair in new[]{new {Id="VISUAL_HUD",Control=hud},new {Id="VISUAL_MOVEMENT",Control=movement},new {Id="VISUAL_BLOCKS",Control=blocks}})
+                        Check(pair.Id,pair.Control.SelectedIndex==1?"PASS":pair.Control.SelectedIndex==2?"FAIL":"NOT_RUN","Наблюдение пользователя: "+Convert.ToString(pair.Control.SelectedItem));
+                    if(!checks.Any(c=>Data.Str(c,"id")=="RUN")) {
+                        bool failed=checks.Any(c=>Data.Str(c,"result")=="FAIL" && Data.Str(c,"id")!="CANDIDATE_TCP" && Data.Str(c,"id")!="CANDIDATE_JOIN");
+                        bool partial=roleName=="host" && role.SelectedIndex!=2 && !checks.Any(c=>Data.Str(c,"id")=="TWO_PLAYERS" && Data.Str(c,"result")=="PASS");
+                        Check("RUN",failed?"FAIL":partial?"PARTIAL":"PASS","Итог выполненного сценария; отдельные непроверенные функции остаются NOT_RUN.");
+                    }
+                    try {await Snapshot("after");}catch(Exception e){Check("ENVIRONMENT_AFTER","PARTIAL",e.GetType().Name);}
+                }
                 if(bridge!=null) { try { if(bridge.State().Count>0) {await bridge.Send("stop",null,CancellationToken.None); await Task.Delay(2200);} } catch { } bridge.Dispose(); bridge=null; }
                 if(working) { try { await Report(); } catch(Exception e) { Log("Сбор отчёта неполный: "+e.Message+". Данные остались в "+reportRoot); } }
                 working=false; start.Enabled=true; stop.Enabled=false; update.Enabled=true; if(cancel!=null) cancel.Dispose();
-                foreach(Control c in new Control[]{game,role,network,mode,proxy,skyrim,publicIp}) c.Enabled=true;
-                invite.ReadOnly=false;
+                foreach(Control c in new Control[]{game,role,network,mode,proxy,skyrim,mods,conditions,publicIp}) c.Enabled=true;
+                invite.ReadOnly=false; proxy.Enabled=mode.SelectedIndex>=2;
                 if(closing) Close();
             }
         }
@@ -307,15 +346,15 @@ namespace SkyCraftTests {
             if(Data.Str(bridge.State(),"world")!="local") {await bridge.Send("leave",null,token); await WaitWorld("local",90,token);}
             await bridge.Send("host",Data.Obj("port",25565),token);
             int port=Data.Int(bridge.State(),"hostPort");
-            var rows=addresses.Select(a=>Data.Obj("ip",Data.Str(a,"ip"),"scope",Data.Str(a,"scope"),"port",port)).ToList();
+            var rows=addresses.Select(a=>Data.Obj("ip",Data.Str(a,"ip"),"scope",Data.Str(a,"scope"),"provider",Data.Str(a,"provider"),"port",port)).ToList();
             if(Data.Str(observed,"ip")!="" && !rows.Any(a=>Data.Str(a,"ip")==Data.Str(observed,"ip"))) rows.Add(Data.Obj("ip",Data.Str(observed,"ip"),"scope","global","port",port));
-            rows=rows.Take(16).ToList(); invite.Text=new Invitation {RunId=runId,Addresses=rows,Expires=DateTime.UtcNow.AddHours(24)}.Encode();
+            rows=rows.Take(16).ToList(); invite.Text=new Invitation {RunId=runId,Addresses=rows,Expires=DateTime.UtcNow.AddMinutes(30)}.Encode();
             Check("HOST_OPEN","PASS","Мир открыт на TCP "+port+". Скопируйте код и передайте клиенту.");
             await bridge.Send("configure",Data.Obj("mode","DIRECT"),token);
             var probe=await bridge.Send("probe",Data.Obj("target","127.0.0.1:"+port),token);
             Check("HOST_LOCAL_TCP",Data.Bool(Data.Sub(probe,"detail"),"success")?"PASS":"FAIL","Проверен собственный сервер; вход друга этим не подтверждён.");
-            await bridge.Send("restore",null,token);
-            Log("Жду клиента. Когда игрок войдёт, автоматически запишу 3 минуты наблюдений. Можно играть и проверять HUD/блоки.");
+            if(!Data.Bool(Data.Sub(probe,"detail"),"success")) throw new IOException("HOST_LOCAL_TCP_FAILED: собственный сервер не отвечает; отчёт собирается, ждать друга не требуется.");
+            Log("Жду клиента. После входа записываю 4 минуты; клиенту нужны время на возврат и повторный вход. Дождитесь окончания или остановите после отказа клиента.");
             var waiting=Stopwatch.StartNew(); bool found=false;
             while(waiting.Elapsed.TotalMinutes<20) {
                 token.ThrowIfCancellationRequested(); var state=bridge.State();
@@ -324,73 +363,132 @@ namespace SkyCraftTests {
             }
             if(!found) {Check("TWO_PLAYERS","NOT_RUN","Клиент не появился за 20 минут.");return;}
             Check("TWO_PLAYERS","PASS","Сервер сообщил не менее двух игроков.");
-            await Observe(180,"HOST_SESSION",true,token);
-            Check("VISUAL_GAMEPLAY","NOT_RUN","HUD, движение, блоки и квесты требуют наблюдения игроков; программа не выдаёт им PASS.");
+            await Observe(240,"HOST_SESSION",true,token);
+        }
+        async Task Join(string endpoint,CancellationToken token) {
+            var reply=await bridge.Send("join",Data.Obj("target",endpoint),token);
+            pendingJoinRequest=Data.Int(Data.Sub(reply,"detail"),"joinRequest");
+        }
+        async Task ProxyPreflight(CancellationToken token) {
+            var state=bridge.State(); string actual=Data.Str(state,"transportMode");
+            if(actual=="DIRECT") {Check("PROXY_PREFLIGHT","NOT_REQUIRED","DIRECT использует маршруты Windows, включая действующий VPN/WARP; локальный прокси не нужен.");return;}
+            string endpoint=Data.Str(state,"proxyEndpoint"); Uri uri;
+            if(!Uri.TryCreate("tcp://"+endpoint,UriKind.Absolute,out uri) || uri.Port<1) throw new IOException("Не задан корректный адрес прокси. Выберите DIRECT или адрес реально запущенного SOCKS5/HTTP-прокси.");
+            using(var socket=new TcpClient()) {
+                var task=socket.ConnectAsync(uri.DnsSafeHost,uri.Port);
+                if(await Task.WhenAny(task,Task.Delay(3000,token))!=task) {token.ThrowIfCancellationRequested();Check("PROXY_PREFLIGHT","FAIL",endpoint+" не ответил за 3 с.");throw new IOException("PROXY_UNAVAILABLE: локальный/выбранный прокси недоступен. Адреса хоста ещё не проверялись.");}
+                try {await task;} catch {Check("PROXY_PREFLIGHT","FAIL",endpoint+" отклонил TCP.");throw new IOException("PROXY_UNAVAILABLE: прокси "+endpoint+" не слушает порт. Проверьте его программу и порт либо выберите DIRECT.");}
+            }
+            Check("PROXY_PREFLIGHT","PASS",endpoint+" слушает TCP. Проверка выбранного протокола и целевого адреса выполняется далее модом.");
+        }
+        async Task VerifyPeer(CancellationToken token) {
+            var watch=Stopwatch.StartNew();
+            while(watch.Elapsed.TotalSeconds<5) {
+                token.ThrowIfCancellationRequested(); var peer=Data.Sub(bridge.State(),"peerSession");
+                if(peer.Count>0) {
+                    bool matches=Assessment.SessionMatches(peer,runId);
+                    Check("PEER_SESSION",matches?"PASS":"FAIL","Ожидался "+runId+" / network.4; сервер сообщил "+Data.Json(peer));
+                    if(!matches)throw new IOException("SESSION_MISMATCH: код принадлежит другому или уже завершённому тесту. Хост должен начать новый прогон и передать новый код.");return;
+                }
+                await Task.Delay(250,token);
+            }
+            Check("PEER_SESSION","FAIL","Сервер не прислал метаданные SkyCraft network.4.");
+            throw new IOException("PEER_VERSION_UNKNOWN: проверьте network.4 на хосте и запущенный помощник.");
+        }
+        async Task Snapshot(string stage) {
+            string plan=Path.Combine(reportRoot,"environment-"+stage+"-plan.json");
+            Data.Atomic(plan,Data.Obj("action","environment","output",Path.Combine(reportRoot,"environment-"+stage+".json"),"targets",routeTargets));
+            await Worker(plan);
         }
         async Task Client(Invitation received,CancellationToken token) {
-            var candidates=received.Addresses.Where(a=>Data.Str(a,"scope")=="global" || networkKind==1 && Data.Str(a,"scope")=="lan" || networkKind==2 && Data.Str(a,"scope")=="overlay").OrderBy(a=>Data.Str(a,"scope")=="global"?1:0).ToList();
-            if(candidates.Count==0) throw new IOException("В коде нет адреса для выбранной сети. Хосту нужен глобальный IPv6 или входящий IPv4/TCP. Проверьте выбор «Одна локальная сеть».");
-            Log("Автоматически проверяю "+candidates.Count+" адресов через выбранный транспорт…");
+            var candidates=received.Addresses.Where(a=>networkKind==0?Data.Str(a,"scope")=="global":networkKind==1?Data.Str(a,"scope")=="lan":Data.Str(a,"scope")=="overlay")
+                .OrderBy(a=>Data.Str(a,"provider")=="radmin"?0:1).ThenBy(a=>Data.Str(a,"ip").Contains(":")?1:0).ToList();
+            if(candidates.Count==0) throw new IOException("В коде нет адресов выбранной сети. Для Radmin выберите «Общая виртуальная сеть» на клиенте; для физической LAN — «Одна локальная сеть».");
+            Log("Проверяю "+candidates.Count+" адресов только выбранной сети; режим "+Data.Str(bridge.State(),"transportMode")+". Код действителен до "+received.Expires.ToLocalTime().ToString("HH:mm")+".");
+            int tcpReady=0;
             foreach(var candidate in candidates) {
                 string endpoint=Invitation.Endpoint(candidate);
                 var state=await bridge.Send("probe",Data.Obj("target",endpoint),token);
                 bool ok=Data.Bool(Data.Sub(state,"detail"),"success"); Check("CANDIDATE_TCP",ok?"PASS":"FAIL",endpoint+" "+Data.Json(Data.Sub(state,"detail")));
                 if(ok) {
+                    tcpReady++; target=endpoint; var before=bridge.State();
                     Exception joinFailure=null;
-                    try {
-                        await bridge.Send("join",Data.Obj("target",endpoint),token); await WaitWorld("remote",90,token);
-                        target=endpoint; break;
-                    } catch(OperationCanceledException) {throw;} catch(Exception e) {joinFailure=e;}
+                    try {await Join(endpoint,token); await WaitWorld("remote",90,token);await VerifyPeer(token);break;}
+                    catch(OperationCanceledException) {throw;}
+                    catch(Exception e) {joinFailure=e;}
                     if(joinFailure!=null) {
                         Check("CANDIDATE_JOIN","FAIL",endpoint+": "+joinFailure.Message);
                         await bridge.Send("leave",null,token); await WaitWorld("local",90,token);
+                        await Recovery(before,"JOIN_RECOVERY_"+tcpReady,token); target="";
                     }
                 }
             }
-            if(target=="") throw new IOException("Ни один адрес хоста не доступен. Проверьте TCP 25565/брандмауэр/проброс порта. При CGNAT или блокировке входящего VPN потребуется доступный IPv6 или ретранслятор; повторный сбор IP этого не исправит.");
+            if(target=="") throw new IOException(tcpReady>0?"GAME_LOGIN_FAILED: TCP доступен, но вход Minecraft не состоялся. Причины и фаза сохранены в JSONL и last-state.json; проброс порта сам по себе это не исправит.":"TARGET_TCP_UNAVAILABLE: выбранные адреса не ответили. Маршруты, запущенные фильтры и результаты каждого адреса записаны в отчёт. Внешний IP VPN не гарантирует входящий доступ.");
             Check("REMOTE_JOIN","PASS","Minecraft вошёл на "+target+".");
             await Observe(180,"CLIENT_SESSION",false,token);
-            await bridge.Send("leave",null,token); await WaitWorld("local",90,token); Check("LEAVE_RECOVERY","PASS","Вернулся в собственный мир.");
-            await bridge.Send("join",Data.Obj("target",target),token); await WaitWorld("remote",90,token); Check("REJOIN","PASS","Повторный вход выполнен.");
+            var departure=bridge.State(); await bridge.Send("leave",null,token); await WaitWorld("local",90,token);
+            await Recovery(departure,"LEAVE_RECOVERY",token);
+            await Join(target,token); await WaitWorld("remote",90,token);await VerifyPeer(token); Check("REJOIN","PASS","Повторный вход выполнен.");
             await Observe(15,"REJOIN_SESSION",false,token);
-            Check("VISUAL_GAMEPLAY","NOT_RUN","HUD/движение/синхронизация блоков не измерены программой.");
             Log("Тест завершён; клиент остаётся у хоста. Возврат в свой мир: обычная команда /leave.");
         }
+        async Task Recovery(Dictionary<string,object> before,string name,CancellationToken token) {
+            var samples=new List<Dictionary<string,object>>(); double maximum=0; bool valid=true; var watch=Stopwatch.StartNew();
+            var baseline=Data.Sub(before,"skyPosition");
+            try {
+                while(watch.Elapsed.TotalSeconds<5) {
+                    token.ThrowIfCancellationRequested(); var state=bridge.State(); samples.Add(state);
+                    valid &= Data.Str(state,"world")=="local" && Data.Bool(state,"skyrimLinked") && Data.Bool(state,"positionReady");
+                    var position=Data.Sub(state,"skyPosition");
+                    if(position.Count==0 || baseline.Count==0) valid=false;
+                    else maximum=Math.Max(maximum,Assessment.Distance(baseline,position));
+                    status.Text=name+": проверка позиции 5 с. Не двигайтесь.";
+                    await Task.Delay(500,token);
+                }
+            } finally {Data.Atomic(Path.Combine(reportRoot,name+".json"),Data.Obj("before",before,"samples",samples,"maximumSkyDriftBlocks",maximum,"toleranceBlocks",3));}
+            bool pass=valid && maximum<=3;
+            Check(name,pass?"PASS":"FAIL","Мир и связь Skyrim; максимальное смещение от исходной позиции: "+maximum.ToString("F3")+" блока (допуск 3, включая подъём из геометрии до 2,5). Проверка требует неподвижного игрока.");
+            if(!pass) throw new IOException("POSITION_RECOVERY_FAILED: позиция/связь не восстановлены. Дальнейшие переходы остановлены; отчёт собирается автоматически.");
+        }
         async Task Solo(CancellationToken token) {
-            if(Data.Str(bridge.State(),"world")!="local") throw new IOException("Для проверки без друга нужен собственный мир. Вернитесь /leave и повторите.");
-            if(Data.Int(bridge.State(),"players")>1) throw new IOException("В мире есть другие игроки. Проверка без друга не должна прерывать их сессию.");
+            if(Data.Str(bridge.State(),"world")!="local" || Data.Int(bridge.State(),"players")>1) throw new IOException("Для проверки без друга нужен свой мир без других игроков.");
+            Log("Не двигайтесь во время трёх проверок восстановления. Игра сама попробует закрытый порт и вернётся.");
             await bridge.Send("configure",Data.Obj("mode","DIRECT"),token);
-            await bridge.Send("host",Data.Obj("port",25565),token); int port=Data.Int(bridge.State(),"hostPort");
-            var state=await bridge.Send("probe",Data.Obj("target","127.0.0.1:"+port),token); Check("SOLO_HOST_TCP",Data.Bool(Data.Sub(state,"detail"),"success")?"PASS":"FAIL","Проверен опубликованный локальный мир.");
-            var listener=new TcpListener(IPAddress.Loopback,0); listener.Start(); int closedPort=((IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
-            string closed="127.0.0.1:"+closedPort;
-            state=await bridge.Send("probe",Data.Obj("target",closed),token);
-            if(Data.Bool(Data.Sub(state,"detail"),"success")) throw new IOException("Выбранный закрытый порт успела занять другая программа. Повторите тест.");
-            Check("CLOSED_PORT","PASS","Ожидаемый отказ: "+closed+".");
-            var before=Data.Sub(bridge.State(),"position");
-            await bridge.Send("join",Data.Obj("target",closed),token); await Task.Delay(2000,token); state=await WaitWorld("local",90,token);
-            Check("FAILED_JOIN_RECOVERY","PASS","После неудачного входа собственный мир восстановлен.");
-            Check("POSITION_OBSERVATION","INFO","Позиция до: "+Data.Json(before)+"; после: "+Data.Json(Data.Sub(state,"position"))+". Точные переходы записаны в JSONL; смещение требует анализа SKY-001.");
-            await bridge.Send("host",Data.Obj("port",port),token);
-            state=await bridge.Send("probe",Data.Obj("target","127.0.0.1:"+port),token);
-            Check("DIRECT_AFTER_RECOVERY",Data.Bool(Data.Sub(state,"detail"),"success")?"PASS":"FAIL","После восстановления DIRECT отвечает.");
-            Check("TWO_PLAYER_AND_VPN_MATRIX","NOT_RUN","Для совместной игры нужен второй ПК. VPN/zapret/Cloudflare включаются пользователем, затем этот тест запускается повторно.");
+            for(int trial=1;trial<=3;trial++) {
+                await bridge.Send("host",Data.Obj("port",25565),token);int port=Data.Int(bridge.State(),"hostPort");
+                var state=await bridge.Send("probe",Data.Obj("target","127.0.0.1:"+port),token);
+                bool available=Data.Bool(Data.Sub(state,"detail"),"success");Check("SOLO_HOST_TCP_"+trial,available?"PASS":"FAIL","Собственный сервер 127.0.0.1:"+port);
+                if(!available) throw new IOException("Собственный сервер недоступен.");
+                var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();int closedPort=((IPEndPoint)listener.LocalEndpoint).Port;listener.Stop();string closed="127.0.0.1:"+closedPort;
+                state=await bridge.Send("probe",Data.Obj("target",closed),token);
+                if(Data.Bool(Data.Sub(state,"detail"),"success")) throw new IOException("Закрытый порт занят другой программой. Повторите тест.");
+                Check("CLOSED_PORT_"+trial,"PASS","Ожидаемый TCP-отказ: "+closed);
+                var before=bridge.State(); await Join(closed,token); await Task.Delay(2000,token);await WaitWorld("local",90,token);
+                var reason=Data.Sub(bridge.State(),"lastFailure");Check("DISCONNECT_REASON_"+trial,Data.Str(reason,"reason")!=""?"PASS":"FAIL",Data.Json(reason));
+                await Recovery(before,"FAILED_JOIN_RECOVERY_"+trial,token);
+            }
+            await bridge.Send("host",Data.Obj("port",25565),token);
+            var restored=await bridge.Send("probe",Data.Obj("target","127.0.0.1:"+Data.Int(bridge.State(),"hostPort")),token);
+            Check("DIRECT_AFTER_RECOVERY",Data.Bool(Data.Sub(restored,"detail"),"success")?"PASS":"FAIL","После трёх восстановлений DIRECT отвечает.");
+            Check("TWO_PLAYER_AND_VPN_MATRIX","NOT_RUN","Один ПК проверяет локальный цикл и восстановление; межсетевой доступ и двух игроков проверяет парный тест.");
         }
         async Task Observe(int seconds,string name,bool host,CancellationToken token) {
             var samples=new List<Dictionary<string,object>>(); var watch=Stopwatch.StartNew();
-            while(watch.Elapsed.TotalSeconds<seconds) {
-                token.ThrowIfCancellationRequested(); var state=bridge.State(); samples.Add(state);
-                string expected=host?"local":"remote";
-                if(Data.Str(state,"world")!=expected) {Data.Atomic(Path.Combine(reportRoot,name+".json"),samples); Check(name,"FAIL","Мир/связь пропали во время наблюдения.");return;}
-                status.Text=name+": "+(int)watch.Elapsed.TotalSeconds+" / "+seconds+" с; игроков "+Data.Int(state,"players");
-                await Task.Delay(1000,token);
-            }
-            Data.Atomic(Path.Combine(reportRoot,name+".json"),samples);
-            Check(name,"PASS",seconds+" с в мире Minecraft; доля связи Skyrim: "+samples.Count(s=>Data.Bool(s,"skyrimLinked"))+"/"+samples.Count+". Графика и блоки не проверялись.");
+            try {
+                while(watch.Elapsed.TotalSeconds<seconds) {
+                    token.ThrowIfCancellationRequested(); var state=bridge.State(); samples.Add(state);
+                    string expected=host?"local":"remote";
+                    if(Data.Str(state,"world")!=expected || !Data.Bool(state,"skyrimLinked")) {Check(name,"FAIL","Мир/связь пропали: "+Data.Json(Data.Sub(state,"lastFailure")));throw new IOException("SESSION_LOST: дальнейшие проверки остановлены.");}
+                    int elapsed=(int)watch.Elapsed.TotalSeconds;
+                    status.Text=name+": "+elapsed+" / "+seconds+" с; игроков "+Data.Int(state,"players")+". "+(elapsed<60?"Проверьте HUD, отметьте результат в помощнике.":elapsed<120?"Проверьте движение, затем встаньте на месте.":"Проверьте блоки у обоих, затем не двигайтесь: будет автоматический возврат.");
+                    await Task.Delay(1000,token);
+                }
+                Check(name,"PASS",seconds+" с в мире со связью Skyrim; два игрока видны в "+samples.Count(item=>Data.Int(item,"players")>=2)+"/"+samples.Count+" отсчётах. HUD и блоки отмечаются пользователем отдельно.");
+            } finally {Data.Atomic(Path.Combine(reportRoot,name+".json"),samples);}
         }
         async Task Report() {
             Log("Собираю Windows, версии, JSONL и итоговый ZIP…");
-            Data.Atomic(Path.Combine(reportRoot,"automatic-results.json"),Data.Obj("schema",1,"runId",runId,"role",roleName,"startedUtc",started.ToString("o"),"endedUtc",DateTime.UtcNow.ToString("o"),"checks",checks,"visualGameplay","NOT_RUN","conditions","Process/adapter hints only; VPN/filter state is not inferred as proven."));
+            Data.Atomic(Path.Combine(reportRoot,"automatic-results.json"),Data.Obj("schema",2,"runId",runId,"role",role.SelectedIndex==2?"solo":roleName,"overall",checks.Where(c=>Data.Str(c,"id")=="RUN").Select(c=>Data.Str(c,"result")).LastOrDefault(),"startedUtc",started.ToString("o"),"endedUtc",DateTime.UtcNow.ToString("o"),"checks",checks,"visualGameplay","See VISUAL_* checks; user observations","conditions",conditions.Text,"networkSelection",role.SelectedIndex==2?"Loopback":networkKind==2?"Virtual":networkKind==1?"Physical LAN":"Internet","transportRequested",selectedMode,"source","Conditions are tester annotations; environment-before/after.json contain observed facts."));
             File.WriteAllText(Path.Combine(reportRoot,"ИТОГИ.txt"),String.Join(Environment.NewLine,checks.Select(c=>"["+Data.Str(c,"result")+"] "+Data.Str(c,"id")+": "+Data.Str(c,"note")))+Environment.NewLine,Encoding.UTF8);
             string plan=Path.Combine(reportRoot,"collector-plan.json");
             Data.Atomic(plan,Data.Obj("action","collect","game",gamePath,"skyrim",skyrimPath==""?"NOT_FOUND":skyrimPath,"mods",modsPath,"output",reportRoot,"runId",runId,"role",roleName,"network",networkLabel,"target",target,"traceFile",traceName));
@@ -444,10 +542,10 @@ namespace SkyCraftTests {
             var checks=new List<string>();
             try {
                 var rows=new List<Dictionary<string,object>> {Data.Obj("ip","192.168.1.10","scope","lan","port",25565),Data.Obj("ip","2001:4860:4860::8888","scope","global","port",25565)};
-                var original=new Invitation {RunId="TEST_01",Addresses=rows,Expires=DateTime.UtcNow.AddHours(1)};
+                var original=new Invitation {RunId="TEST_01",Addresses=rows,Expires=DateTime.UtcNow.AddMinutes(20)};
                 var copy=Invitation.Decode(original.Encode()); if(copy.Addresses.Count!=2 || Invitation.Endpoint(copy.Addresses[1])!="[2001:4860:4860::8888]:25565") throw new Exception("Invitation roundtrip"); checks.Add("INVITATION_ROUNDTRIP_IPV4_IPV6 PASS");
                 original.Expires=DateTime.UtcNow.AddMinutes(-1); bool rejected=false; try {Invitation.Decode(original.Encode());} catch {rejected=true;} if(!rejected) throw new Exception("Expired invitation");checks.Add("EXPIRED_INVITATION_REJECTED PASS");
-                original.Expires=DateTime.UtcNow.AddHours(1); original.Addresses=new List<Dictionary<string,object>>{Data.Obj("ip","127.0.0.1","scope","global","port",25565)}; rejected=false;try{Invitation.Decode(original.Encode());}catch{rejected=true;}if(!rejected)throw new Exception("Loopback invitation"); checks.Add("LOOPBACK_AND_FALSE_SCOPE_REJECTED PASS");
+                original.Expires=DateTime.UtcNow.AddMinutes(20); original.Addresses=new List<Dictionary<string,object>>{Data.Obj("ip","127.0.0.1","scope","global","port",25565)}; rejected=false;try{Invitation.Decode(original.Encode());}catch{rejected=true;}if(!rejected)throw new Exception("Loopback invitation"); checks.Add("LOOPBACK_AND_FALSE_SCOPE_REJECTED PASS");
                 string folder=Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path)),"fixture-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);
                 using(var bridge=new Bridge(folder)) { rejected=false;try{using(var duplicate=new Bridge(folder)) {}}catch(InvalidOperationException){rejected=true;}if(!rejected)throw new Exception("Lease lock");checks.Add("DUPLICATE_LEASE_REJECTED PASS"); }
                 if(File.Exists(Path.Combine(folder,"config","skycraft-test","lease.json"))) throw new Exception("Lease cleanup");checks.Add("LEASE_REMOVED_ON_DISPOSE PASS");
@@ -473,6 +571,11 @@ namespace SkyCraftTests {
                         if(!rejected)throw new Exception("IPC cancellation");checks.Add("IPC_CANCELLATION PASS");
                     }
                 }
+                var atOrigin=Data.Obj("x",0.0,"y",0.0,"z",0.0);var away=Data.Obj("x",388.0,"y",-25.0,"z",-6.0);
+                if(Assessment.Distance(away,atOrigin)<380 || Assessment.Distance(atOrigin,atOrigin)!=0)throw new Exception("Position reset classification");checks.Add("POSITION_RESET_DETECTED_LEGITIMATE_ORIGIN_ALLOWED PASS");
+                var packet=Data.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(copy.Encode().Substring(5))));packet["version"]="0.1.2-ys.network.3";
+                rejected=false;try{Invitation.Decode("SCY2:"+Convert.ToBase64String(Encoding.UTF8.GetBytes(Data.Json(packet))));}catch{rejected=true;}if(!rejected)throw new Exception("Old version invite");checks.Add("OLD_VERSION_INVITATION_REJECTED PASS");
+                if(!Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.4"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","OLD","version","0.1.2-ys.network.4"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.3"),"TEST"))throw new Exception("Peer session matching");checks.Add("PEER_SESSION_AND_VERSION_MATCHING PASS");
                 Data.Atomic(path,Data.Obj("result","PASS","checks",checks));return 0;
             } catch(Exception e) {Data.Atomic(path,Data.Obj("result","FAIL","checks",checks,"error",e.ToString()));return 1;}
         }

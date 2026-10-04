@@ -16,6 +16,8 @@ if ($plan.action -eq 'install') {
         if ($process.CommandLine -and ($process.CommandLine.IndexOf($game,[StringComparison]::OrdinalIgnoreCase) -ge 0 -or $process.CommandLine.IndexOf($gameAlt,[StringComparison]::OrdinalIgnoreCase) -ge 0)) { throw 'Selected Minecraft instance is still running. Close it normally before updating.' }
     }
     & (Join-Path $PSScriptRoot 'install-friend-update.ps1') -GameDirectory $game
+} elseif ($plan.action -eq 'environment') {
+    & (Join-Path $PSScriptRoot 'collect-test-environment.ps1') -OutputFile $plan.output -TargetAddresses @($plan.targets)
 } elseif ($plan.action -eq 'collect') {
     if ($plan.runId -notmatch '^[A-Za-z0-9_-]{1,64}$' -or $plan.role -notin @('host','client') -or $plan.network -notin @('LAN','Internet','Loopback')) { throw 'Invalid collection plan.' }
     & (Join-Path $PSScriptRoot 'check-friend-installation.ps1') -GameDirectory $plan.game -SkyrimDirectory $plan.skyrim -ModsDirectory $plan.mods -OutputDirectory $plan.output

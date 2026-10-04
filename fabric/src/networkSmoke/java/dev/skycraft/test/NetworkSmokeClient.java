@@ -37,7 +37,13 @@ public final class NetworkSmokeClient implements ClientModInitializer {
 		if (finished) return;
 		if (System.nanoTime() > deadline) result.completeExceptionally(new IOException("Timed out waiting for the real Minecraft login handshake"));
 		if (result.isDone()) {
-			try { result.join(); if (!assistantSmoke(minecraft)) return; }
+			try {
+				result.join();
+				if (NetworkClient.lastFailure() == null) return;
+				if (!NetworkClient.lastFailure().equals("SKYCRAFT_SMOKE_LOGIN_REJECT")) throw new IOException("Lost login rejection reason: " + NetworkClient.lastFailure());
+				if (!NetworkClient.failureDetails().get("phase").equals("login")) throw new IOException("Wrong rejection phase");
+				if (!assistantSmoke(minecraft)) return;
+			}
 			catch (Exception e) { result.obtrudeException(e); }
 			finished = true;
 			String report;
@@ -136,6 +142,23 @@ public final class NetworkSmokeClient implements ClientModInitializer {
 			if (!host.equals("host.invalid") || port != 25570 || varInt(packet) != 2 || packet.available() != 0) {
 				throw new IOException("Incorrect Minecraft handshake endpoint: " + host + ":" + port);
 			}
+			// Consume only the initial login frame; never log its username or contents.
+			int helloLength = varInt(socket.getInputStream());
+			if (helloLength < 1 || helloLength > 1024) throw new IOException("Invalid login hello length");
+			if (socket.getInputStream().readNBytes(helloLength).length != helloLength) throw new java.io.EOFException();
+			var bytes = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+			var framed = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+			try {
+				bytes.writeVarInt(0);
+				net.minecraft.network.protocol.login.ClientboundLoginDisconnectPacket.STREAM_CODEC.encode(bytes,
+					new net.minecraft.network.protocol.login.ClientboundLoginDisconnectPacket(net.minecraft.network.chat.Component.literal("SKYCRAFT_SMOKE_LOGIN_REJECT")));
+				framed.writeVarInt(bytes.readableBytes()); framed.writeBytes(bytes);
+				byte[] packetBytes = new byte[framed.readableBytes()]; framed.readBytes(packetBytes);
+				socket.getOutputStream().write(packetBytes); socket.getOutputStream().flush();
+			} finally {bytes.release(); framed.release();}
+			long waitUntil = System.nanoTime() + 10_000_000_000L;
+			while (NetworkClient.lastFailure() == null && System.nanoTime() < waitUntil) java.util.concurrent.locks.LockSupport.parkNanos(10_000_000L);
+			if (NetworkClient.lastFailure() == null) throw new IOException("Login rejection was not captured");
 			result.complete(null);
 		} catch (Throwable e) { result.completeExceptionally(e); }
 	}

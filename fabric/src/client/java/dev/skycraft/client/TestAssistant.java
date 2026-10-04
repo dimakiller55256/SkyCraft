@@ -78,6 +78,7 @@ public final class TestAssistant {
 	}
 	private static void endLease(Minecraft mc) {
 		NetworkClient.testConfig(null);
+		dev.skycraft.net.SkyNet.testRunId = "";
 		NetworkDiagnostics.event("assistant_lease_end", Map.of());
 		NetworkDiagnostics.stop();
 		if (pending != null) pending.cancel(true);
@@ -89,6 +90,7 @@ public final class TestAssistant {
 				String role = request.get("role").getAsString();
 				if (!java.util.Set.of("host", "client").contains(role)) throw new IllegalArgumentException("role");
 				NetworkDiagnostics.start(AssistantProtocol.runId(request.get("runId").getAsString()), role);
+				dev.skycraft.net.SkyNet.testRunId = role.equals("host") ? request.get("runId").getAsString() : "";
 				NetworkDiagnostics.event("assistant_start", Map.of("session", session));
 			}
 			case "host" -> {
@@ -111,22 +113,23 @@ public final class TestAssistant {
 			case "join" -> {
 				if (mc.player == null || mc.level == null) throw new IllegalStateException("world required");
 				MirrorWorld.joinFriend(mc, Endpoint.parse(request.get("target").getAsString()).authority());
+				detail = Map.of("joinRequest", MirrorWorld.joinRequest());
 			}
 			case "leave" -> MirrorWorld.leaveFriend(mc);
 			case "configure" -> {
 				var props = new java.util.Properties();
 				props.setProperty("network.mode", request.get("mode").getAsString());
 				if (request.has("proxy")) props.setProperty("network.proxy", request.get("proxy").getAsString());
-				props.setProperty("network.timeoutMillis", "3000");
+				props.setProperty("network.timeoutMillis", "10000");
 				NetworkConfig selected = NetworkConfig.fromProperties(props);
 				// Reuse existing credentials only for exactly the same explicit proxy.
 				NetworkConfig current = NetworkConfig.load(mc.gameDirectory.toPath().resolve("config/skycraft.properties"));
-				if (selected.proxy() != null && selected.proxy().equals(current.proxy())) selected = new NetworkConfig("", selected.mode(), selected.proxy(), current.username(), current.password(), 3000, selected.hostPort(), "");
+				if (selected.proxy() != null && selected.proxy().equals(current.proxy())) selected = new NetworkConfig("", selected.mode(), selected.proxy(), current.username(), current.password(), 10000, selected.hostPort(), "");
 				NetworkClient.testConfig(selected);
 				NetworkDiagnostics.config(selected);
 			}
 			case "restore" -> NetworkClient.testConfig(null);
-			case "stop" -> { NetworkClient.testConfig(null); NetworkDiagnostics.stop(); }
+			case "stop" -> { NetworkClient.testConfig(null); dev.skycraft.net.SkyNet.testRunId = ""; NetworkDiagnostics.stop(); }
 			default -> throw new IllegalArgumentException("action");
 		}
 		NetworkDiagnostics.event("assistant_command", Map.of("command", action, "request_id", lastId, "result", result));
@@ -136,7 +139,13 @@ public final class TestAssistant {
 		NetworkDiagnostics.config(config);
 		NetworkDiagnostics.event("probe_started", Map.of("attempt_id", id, "target_host", endpoint.host(), "target_port", endpoint.port()));
 		Map<String, Object> data = new LinkedHashMap<>();
-		try (var dialer = new SocketDialer(e -> NetworkDiagnostics.dial(id, e)); var socket = dialer.connect(endpoint, config)) {
+		data.put("mode", config.mode().name());
+		try (var dialer = new SocketDialer(e -> {
+			NetworkDiagnostics.dial(id, e);
+			if (!e.phase().equals("dial_failed")) data.put("phase", e.phase());
+			data.put("peer_host", e.peerHost()); data.put("peer_port", e.peerPort());
+			if (e.statusCode() != null) data.put("status_code", e.statusCode());
+		}); var socket = dialer.connect(endpoint, config)) {
 			data.put("success", true); data.put("result", "tcp_ready");
 		} catch (Exception e) { data.put("success", false); data.put("result", "failed"); data.put("exception_type", e.getClass().getSimpleName()); }
 		data.put("elapsed_ms", (System.nanoTime() - started) / 1_000_000L); data.put("attempt_id", id);
@@ -178,12 +187,21 @@ public final class TestAssistant {
 		data.put("modVersion", net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("skycraft").orElseThrow().getMetadata().getVersion().getFriendlyString());
 		data.put("id", lastId); data.put("action", action); data.put("result", result); data.put("error", error); data.put("detail", detail);
 		data.put("traceFile", NetworkDiagnostics.traceFileName());
+		data.put("joinRequest", MirrorWorld.joinRequest());
+		data.put("lastFailure", NetworkClient.failureDetails());
+		data.put("peerSession", NetworkClient.peerSession());
+		data.put("positionReady", SkyClient.positionReady());
+		data.put("skyPosition", Map.of("x", SkyClient.sky().x, "y", SkyClient.sky().y, "z", SkyClient.sky().z));
+		data.put("teleportSeq", SkyClient.sky().teleportSeq);
 		data.put("world", mc.level == null || mc.player == null ? "none" : mc.isLocalServer() ? "local" : "remote");
 		data.put("skyrimLinked", SkyLink.active());
 		data.put("skyrimReady", SkyClient.tookOver() && SkyClient.sky().inGame() && !SkyClient.sky().loading());
 		var server = mc.getSingleplayerServer();
 		data.put("published", server != null && server.isPublished());
-		try { data.put("transportMode", NetworkClient.config(mc).mode().name()); } catch (IOException | IllegalArgumentException e) { data.put("transportMode", "INVALID"); }
+		try {
+			var config = NetworkClient.config(mc); data.put("transportMode", config.mode().name());
+			if (config.proxy() != null) data.put("proxyEndpoint", config.proxy().authority());
+		} catch (IOException | IllegalArgumentException e) { data.put("transportMode", "INVALID"); }
 		if (server != null && server.isPublished()) data.put("hostPort", server.getPort());
 		if (mc.player != null) {
 			data.put("position", Map.of("x", mc.player.getX(), "y", mc.player.getY(), "z", mc.player.getZ()));

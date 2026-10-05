@@ -70,7 +70,7 @@ public final class TestAssistant {
 				if (id > lastId) {
 					lastId = id; action = request.get("action").getAsString(); result = "ok"; error = ""; detail = Map.of();
 					try { execute(mc, request); }
-					catch (Exception e) { result = "failed"; error = e.getClass().getSimpleName(); }
+					catch (Exception e) { result = "failed"; error = dev.skycraft.network.DiagnosticText.safe(e.getClass().getSimpleName() + ": " + e.getMessage()); }
 				}
 			} catch (Exception ignored) { /* Missing, malformed and foreign requests are not executed. */ }
 		}
@@ -97,8 +97,14 @@ public final class TestAssistant {
 				if (!mc.isLocalServer() || mc.player == null) throw new IllegalStateException("own world required");
 				int port = request.get("port").getAsInt();
 				if (port < 1 || port > 65535) throw new IllegalArgumentException("port");
-				NetworkClient.host(mc, port);
+				var authentication = dev.skycraft.network.HostAuthentication.requested(
+					request.has("authentication") ? request.get("authentication").getAsString() : null,
+					request.has("privateNetwork") && request.get("privateNetwork").getAsBoolean());
+				NetworkClient.host(mc, port, authentication);
 				if (!mc.getSingleplayerServer().isPublished()) throw new IOException("host failed");
+				if (mc.getSingleplayerServer().usesAuthentication() != (authentication == dev.skycraft.network.HostAuthentication.ONLINE)) {
+					throw new IOException("Мир уже открыт с другим режимом входа. Перезапустите Skyrim/Minecraft и повторите с нужным режимом хоста.");
+				}
 			}
 			case "probe" -> {
 				Endpoint endpoint = Endpoint.parse(request.get("target").getAsString());
@@ -198,6 +204,9 @@ public final class TestAssistant {
 		data.put("skyrimReady", SkyClient.tookOver() && SkyClient.sky().inGame() && !SkyClient.sky().loading());
 		var server = mc.getSingleplayerServer();
 		data.put("published", server != null && server.isPublished());
+		if (server != null) data.put("hostAuthentication", server.usesAuthentication() ? "ONLINE" : "OFFLINE");
+		data.put("movementInput", Map.of("forward", mc.options.keyUp.isDown(), "back", mc.options.keyDown.isDown(),
+			"left", mc.options.keyLeft.isDown(), "right", mc.options.keyRight.isDown(), "jump", mc.options.keyJump.isDown()));
 		try {
 			var config = NetworkClient.config(mc); data.put("transportMode", config.mode().name());
 			if (config.proxy() != null) data.put("proxyEndpoint", config.proxy().authority());

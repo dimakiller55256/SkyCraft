@@ -93,18 +93,29 @@ public final class NetworkClient {
 	}
 
 	public static void host(Minecraft minecraft, Integer portOverride) {
+		host(minecraft, portOverride, dev.skycraft.network.HostAuthentication.ONLINE);
+	}
+
+	public static void host(Minecraft minecraft, Integer portOverride, dev.skycraft.network.HostAuthentication authentication) {
 		try {
 			NetworkConfig config = config(minecraft);
 			var server = minecraft.getSingleplayerServer();
 			if (server == null) { note(minecraft, "Хост можно открыть только в своём мире."); return; }
-			if (server.isPublished()) { note(minecraft, "Мир уже открыт на порту " + server.getPort() + "."); return; }
+			boolean online = authentication == dev.skycraft.network.HostAuthentication.ONLINE;
+			if (server.isPublished()) {
+				if (server.usesAuthentication() != online) throw new IllegalArgumentException("Мир уже открыт с другим режимом входа. Закройте Skyrim/Minecraft, запустите заново и выберите нужный режим хоста.");
+				note(minecraft, "Мир уже открыт на порту " + server.getPort() + "."); return;
+			}
 			int port = portOverride == null ? config.hostPort() : portOverride;
+			boolean previousAuthentication = server.usesAuthentication();
+			server.setUsesAuthentication(online);
 			if (!server.publishServer(net.minecraft.server.MinecraftServer.MultiplayerScope.LAN, false, port)) {
+				server.setUsesAuthentication(previousAuthentication);
 				NetworkDiagnostics.event("host_failed", java.util.Map.of("host_port", port));
 				note(minecraft, "Не удалось открыть порт " + port + ". Возможно, он занят."); return;
 			}
 			DiscordPresence.setHostAddress(config.advertisedAddress().isEmpty() ? null : config.advertisedAddress());
-			NetworkDiagnostics.event("host_open", java.util.Map.of("host_port", port));
+			NetworkDiagnostics.event("host_open", java.util.Map.of("host_port", port, "host_authentication", authentication.name()));
 			note(minecraft, "Мир открыт на порту " + port + ". Друг подключается через /join адрес:" + port
 				+ ". Для Discord задайте доступный другу адрес: /skycraft address адрес:" + port + ".");
 		} catch (IOException | IllegalArgumentException e) { note(minecraft, "Настройки сети: " + e.getMessage()); }

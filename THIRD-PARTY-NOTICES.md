@@ -28,3 +28,11 @@ the Java vendor and FabricMC after the player signs in with a Microsoft account 
 Minecraft: Java Edition. Skyrim, SKSE and the Address Library aren't included either.
 
 SkyCraft isn't affiliated with or endorsed by Mojang, Microsoft, Bethesda or ZeniMax.
+
+## Separate EasyLAN adaptation
+
+The `easylan/` subproject is an adaptation of EasyLAN 1.6a by XiaoXianHW / Darf,
+licensed GPL-3.0-only. Its license, upstream provenance, build and component
+notices are in that directory. The repository's root license does not replace
+the EasyLAN subproject's license. Its standalone package includes sources and
+the unchanged compatible Fabric API.

@@ -1,0 +1,75 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.18.2'
+}
+
+version = '1.6a-ys.26.3.1'
+group = 'org.xiaoxian.easylan'
+base { archivesName = 'easylan-fabric-26.3' }
+repositories { mavenCentral() }
+dependencies {
+    minecraft 'com.mojang:minecraft:26.3'
+    implementation 'net.fabricmc:fabric-loader:0.19.5'
+    implementation 'net.fabricmc.fabric-api:fabric-api:0.161.0+26.3'
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
+    include 'org.nanohttpd:nanohttpd:2.3.1'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// Test mod and clients are excluded from the distributable JAR.
+if (providers.gradleProperty('lanSmoke').isPresent()) {
+    sourceSets {
+        smoke {
+            compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+            runtimeClasspath += sourceSets.main.runtimeClasspath
+        }
+    }
+    loom {
+        mods {
+            easylan { sourceSet sourceSets.main }
+            'easylan-smoke' { sourceSet sourceSets.smoke }
+        }
+        runs {
+            smokeHostClient {
+                client(); sourceSet = sourceSets.smoke.name
+                runDirectory = '../.tools/easylan-smoke-host'
+                vmArgs '-Xmx512m', '-XX:ActiveProcessorCount=2', '-XX:ReservedCodeCacheSize=128m', '--enable-native-access=ALL-UNNAMED', '-Deasylan.smokeRole=host', '-Dfabric.noGui=true'
+                programArgs '--username', 'EasyLANHost'
+            }
+            smokeGuestClient {
+                client(); sourceSet = sourceSets.smoke.name
+                runDirectory = '../.tools/easylan-smoke-client'
+                vmArgs '-Xmx512m', '-XX:ActiveProcessorCount=2', '-XX:ReservedCodeCacheSize=128m', '--enable-native-access=ALL-UNNAMED', '-Deasylan.smokeRole=client', '-Dfabric.noGui=true'
+                programArgs '--username', 'EasyLANGuest'
+            }
+        }
+    }
+    tasks.register('exportSmokeLaunch') {
+        def runsToExport = [tasks.named('runSmokeHostClient'), tasks.named('runSmokeGuestClient')]
+        dependsOn runsToExport.collectMany { it.get().taskDependencies.getDependencies(it.get()) }
+        doLast {
+            runsToExport.each { provider ->
+                def run = provider.get()
+                def jvm = run.allJvmArgs
+                def cp = jvm.any { it.startsWith('@') } ? [] : ['-classpath',run.classpath.asPath]
+                def data = [java: run.javaLauncher.get().executablePath.asFile.absolutePath,
+                    args: jvm + cp + [run.mainClass.get()] + run.args + ['--username',run.name.contains('Host')?'EasyLANHost':'EasyLANGuest'],
+                    workingDirectory: file('../.tools/easylan-smoke-' + (run.name.contains('Host')?'host':'client')).absolutePath]
+                file("../.tools/${run.name}.json").text = groovy.json.JsonOutput.toJson(data)
+            }
+        }
+    }
+}
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
+    withSourcesJar()
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8'; options.release = 25 }
+tasks.withType(Test).configureEach { useJUnitPlatform() }
+jar { from('LICENSE'); from('THIRD-PARTY-NOTICES.md'); from('UPSTREAM.json'); from('licenses') { into 'LICENSES' } }
+
+loom {
+    runs {
+        client { runDirectory = '../.tools/easylan-game'; programArgs '--username', 'EasyLANHost' }
+    }
+}

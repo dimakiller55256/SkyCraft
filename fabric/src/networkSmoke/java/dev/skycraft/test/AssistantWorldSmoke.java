@@ -66,7 +66,7 @@ final class AssistantWorldSmoke {
 						if (!reason.has("reason") || reason.get("reason").getAsString().isEmpty()) throw new java.io.IOException("Lost failed-join reason");
 						if (Math.abs(mc.player.getX() - 100000.5) > .5 || Math.abs(mc.player.getY() - 100) > .5 || Math.abs(mc.player.getZ() - .5) > .5) throw new java.io.IOException("Recovery reset player position");
 						recoveries++;
-						request(step + 1, "host", Map.of("port", hostPort));
+						request(step + 1, "host", Map.of("port", hostPort, "authentication", "OFFLINE", "privateNetwork", true));
 					}
 					case 1 -> request(step + 1, "probe", Map.of("target", "127.0.0.1:" + hostPort));
 					case 2 -> {
@@ -80,14 +80,15 @@ final class AssistantWorldSmoke {
 			if (step == 15) {Files.delete(directory.resolve("lease.json"));finish(mc, "PASS");return;}
 			switch (step) {
 				case 1 -> request(2, "configure", Map.of("mode", "DIRECT"));
-				case 2 -> request(3, "host", Map.of("port", hostPort));
+				case 2 -> request(3, "host", Map.of("port", hostPort, "authentication", "OFFLINE", "privateNetwork", true));
 				case 3 -> {
 					if (!state.get("published").getAsBoolean() || state.get("hostPort").getAsInt() != hostPort) throw new java.io.IOException("Host not published");
+					if (!state.get("hostAuthentication").getAsString().equals("OFFLINE") || mc.getSingleplayerServer().usesAuthentication()) throw new java.io.IOException("Offline host mode not applied");
 					request(4, "probe", Map.of("target", "127.0.0.1:" + hostPort));
 				}
 				case 4 -> {
 					if (!state.getAsJsonObject("detail").get("success").getAsBoolean()) throw new java.io.IOException("Host probe failed");
-					if (!state.getAsJsonObject("peerSession").has("version") || !state.getAsJsonObject("peerSession").get("version").getAsString().equals("0.1.2-ys.network.4")) throw new java.io.IOException("Server session metadata missing");
+					if (!state.getAsJsonObject("peerSession").has("version") || !state.getAsJsonObject("peerSession").get("version").getAsString().equals("0.1.2-ys.network.5")) throw new java.io.IOException("Server session metadata missing");
 					request(5, "probe", Map.of("target", "127.0.0.1:" + closedPort));
 				}
 				case 5 -> {

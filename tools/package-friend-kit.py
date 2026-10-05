@@ -13,7 +13,7 @@ import subprocess
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_REVISION = 4
+PACKAGE_REVISION = 5
 UPSTREAM_SHA256 = '1133ecde384d70d5261cbc9ba149bc7b544e1653b78846a1623b56241bb392c3'
 NATIVE_SHA256 = '72b0d231f4632cf2268514eece90e9b7adaa2b59c648fcf14aaf55a6513eefa3'
 API_SHA512 = 'ed6b2586d6fde11fde8472f5a527c51e99b67026e46f94d4bfd85e7e28ce5ee299173ee16ad576ceb51f39f98d30a811086a6deb1a86a524859cc16e12da109d'
@@ -109,7 +109,7 @@ def build(output):
     for label,script in wrappers.items():
         entries[label]=('@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\\'+script+'" %*\r\nif errorlevel 1 echo Failed. Read the message above.\r\npause\r\n').encode('ascii')
     entries['НАЧАТЬ.txt']=('SkyCraft YS '+version+' — пакет для друга\r\n\r\nЕсли исходный SkyCraft 0.1.2 уже работает:\r\n1. Распаковать ВЕСЬ ZIP вне Skyrim. Закрыть обе игры.\r\n2. Установить обновление.cmd — путь через Prism → экземпляр → Папка Minecraft.\r\n3. Проверить сборку.cmd — Minecraft и папка SkyrimSE.exe.\r\n4. Обычный запуск SKSE/MO2: тестовое сохранение, HUD, движение, чат T.\r\n5. Собрать отчёт.cmd: режим 1 для запуска, режим 2 для сетевого прогона. ZIP остаются в reports.\r\n\r\nПолные инструкции с адресами/портами: docs/testing/ИНСТРУКЦИЯ.html (открыть браузером) или Excel в той же папке.\r\nКак установить с нуля: docs/YS-FRIEND.md. Вложенный MO2.zip и Prism-instance.zip — альтернативы, не надо устанавливать всё сразу.\r\nНе отправляйте source, свои аккаунты/сохранения или весь установленный Prism. В комплекте только чистые релизные файлы.\r\nРетранслятор/NAT traversal для CGNAT ещё не реализован. Для разных сетей нужен входящий TCP на одном ПК либо IPv6.\r\n').encode('utf-8-sig')
-    entries['НАЧАТЬ.txt'] += ('\r\nРедакция комплекта r4: нужен Java-мод network.4 на обоих ПК. Второй прогон: АВТОТЕСТЫ.html.\r\n'
+    entries['НАЧАТЬ.txt'] += ('\r\nРедакция комплекта r5: нужен Java-мод network.5 на обоих ПК. Второй прогон: АВТОТЕСТЫ.html.\r\n'
         'Минимум действий: АВТОТЕСТЫ.html -> SkyCraft-Хост.exe / SkyCraft-Клиент.exe / SkyCraft-Без-друга.exe.\r\n'
         'Обновление мода кнопкой помощника при закрытых играх; затем MO2/SKSE и отдельное тестовое сохранение.\r\n'
         'Роли, адреса, команды, ID прогона и отчёты автоматизированы. GUI не заменяет ручной проверки HUD/блоков.\r\n'

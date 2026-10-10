@@ -109,7 +109,7 @@ public final class WorldExporter {
 		var sky=dev.skycraft.client.SkyClient.sky();
 		if (sentGeneration != SkyLink.generation() || sentLevel != level || atlas == null || atlas.stale(minecraft)
 			|| sentWorldId!=sky.worldId || sentCollisionEpoch!=sky.collisionEpoch) {
-			resendEverything(minecraft, level);
+			if(!resendEverything(minecraft, level)) return;
 			sentWorldId=sky.worldId;sentCollisionEpoch=sky.collisionEpoch;
 			SkyCraft.LOG.info("SkyCraft: full world/dig resend: world {}, collision epoch {}", Integer.toHexString(sky.worldId),sky.collisionEpoch);
 		}
@@ -123,9 +123,7 @@ public final class WorldExporter {
 		AvatarExporter.frame(minecraft, atlas, partialTick);
 	}
 
-	private static void resendEverything(Minecraft minecraft, ClientLevel level) {
-		sentGeneration = SkyLink.generation();
-		sentLevel = level;
+	private static boolean resendEverything(Minecraft minecraft, ClientLevel level) {
 		atlas = SkyAtlas.build(minecraft);
 		SkyCraft.LOG.info("SkyCraft: {} animated textures (water, lava, fire, ...) will play in Skyrim", atlas.animatedSprites());
 		AvatarExporter.reset();
@@ -134,10 +132,13 @@ public final class WorldExporter {
 		boolean ao = minecraft.options.ambientOcclusion().get();
 		blockRenderer = new ModelBlockRenderer(ao, true, minecraft.getBlockColors());
 		fluidRenderer = new FluidRenderer(minecraft.getModelManager().getFluidStateModelSet());
-		SkyLink.writeRender(Proto.REN_CLEAR_ALL, ByteBuffer.allocate(0), null);
+		if(!SkyLink.writeRender(Proto.REN_CLEAR_ALL, ByteBuffer.allocate(0), null)) return false;
 		ByteBuffer header = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putInt(atlas.width).putInt(atlas.height).flip();
 		boolean ok = SkyLink.writeRender(Proto.REN_ATLAS, header, atlas.pixels.duplicate().clear());
 		SkyCraft.LOG.info("SkyCraft: sent {}x{} texture atlas to Skyrim ({})", atlas.width, atlas.height, ok ? "ok" : "FAILED");
+		if(!ok) return false;
+		sentGeneration = SkyLink.generation();
+		sentLevel = level;
 		SENT.clear();
 		LIT.clear();
 		SOLID.clear();
@@ -160,6 +161,7 @@ public final class WorldExporter {
 				}
 			}
 		}
+		return true;
 	}
 
 	private static void meshDirtySections(ClientLevel level) {

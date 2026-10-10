@@ -565,6 +565,7 @@ namespace skycraft
 				Input::ReleaseAll();
 			}
 			st.skyrimMenuOpen = menu || loading;
+			if (!st.skyrimMenuOpen) Input::ReconcileKeys();
 
 			// World identity: exterior worldspace or interior cell. A change wipes MC's collision.
 			if (cell) {

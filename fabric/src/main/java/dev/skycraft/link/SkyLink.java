@@ -76,6 +76,8 @@ public final class SkyLink {
 	private static long lastOpenAttempt;
 	private static int skyrimPid;
 	private static volatile int generation;
+	private static volatile long nextProcessCheck;
+	private static volatile boolean processPresent;
 
 	private SkyLink() {
 	}
@@ -87,7 +89,15 @@ public final class SkyLink {
 			return false;
 		}
 		long beat = (long) LONG.getAcquire(s, OFF_HEADER + H_SKYRIM_HEARTBEAT);
-		return tickCount() - beat < HEARTBEAT_TIMEOUT_MS;
+		if(tickCount() - beat < HEARTBEAT_TIMEOUT_MS) return true;
+		// Skyrim stops frame heartbeats in its pause menu. That must not switch the LAN
+		// server's physics/flight/input policies or throttle its hidden Minecraft window.
+		long now=System.currentTimeMillis();
+		if(now>=nextProcessCheck) {
+			processPresent=skyrimPid>0 && ProcessHandle.of(skyrimPid).map(ProcessHandle::isAlive).orElse(false);
+			nextProcessCheck=now+1000;
+		}
+		return processPresent;
 	}
 
 	/** Input must stop promptly when Skyrim stops updating, even during its link grace period. */

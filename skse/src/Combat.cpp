@@ -37,6 +37,8 @@ namespace skycraft
 		float diagTimer = 5.0f;
 		bool  engaged = false;
 		float engagedTimer = 0.0f;
+		struct CapturedDamage { float damage; RE::FormID attacker; proto::HurtKind kind{proto::kHurtOther}; std::uint32_t flags{0}; bool typed{false}; };
+		std::vector<CapturedDamage> capturedDamage;
 
 		class HitSink final : public RE::BSTEventSink<RE::TESHitEvent>
 		{
@@ -79,6 +81,9 @@ namespace skycraft
 					hit.flags |= proto::kHurtBlockedInSkyrim;
 				}
 				lastHit = hit;
+				for (auto& damage : capturedDamage) if (!damage.typed && damage.attacker==hit.attacker) {
+					damage.kind=hit.kind;damage.flags=hit.flags;damage.typed=true;
+				}
 				return RE::BSEventNotifyControl::kContinue;
 			}
 		};
@@ -88,7 +93,19 @@ namespace skycraft
 		{
 			static void thunk(RE::Actor* a_this, RE::Actor* a_attacker, float a_damage)
 			{
-				func(a_this, a_attacker, a_damage);
+				// On this AE runtime health is already subtracted on entry; this vfunc checks
+				// remaining health and starts death/essential bleedout. Refund BEFORE that check,
+				// not next frame. Forward the actual deficit once, not raw damage plus deficit.
+				const bool owned = State().mcInWorld && Link::Get().McAlive() && !a_this->IsDead();
+				auto* av=a_this->AsActorValueOwner();
+				const float deficit=owned ? a_this->GetActorValueMax(RE::ActorValue::kHealth)-av->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
+				if (owned && std::isfinite(deficit) && deficit > 0.01f && capturedDamage.size() < 64) {
+					av->RestoreActorValue(RE::ActorValue::kHealth,deficit);
+					capturedDamage.push_back({ std::min(deficit, 10000.0f), a_attacker ? a_attacker->GetFormID() : 0 });
+					func(a_this, a_attacker, 0.0f);
+				} else {
+					func(a_this, a_attacker, a_damage);
+				}
 				if (a_attacker && a_attacker != a_this) {
 					lastDamager = a_attacker->GetFormID();
 					lastDamagerAge = 0.0f;
@@ -127,6 +144,11 @@ namespace skycraft
 		// Minecraft owns the player's health: Skyrim damage is refunded here and sent to Minecraft.
 		void BridgePlayerDamage(RE::PlayerCharacter* a_player, float a_delta)
 		{
+			for (const auto& damage : capturedDamage) {
+				const bool explained = lastHit.age < kHitMemorySeconds && lastHit.attacker == damage.attacker;
+				SendHurt(damage.typed ? damage.kind : explained ? lastHit.kind : proto::kHurtOther, damage.damage, damage.attacker, damage.typed ? damage.flags : explained ? lastHit.flags : 0);
+			}
+			capturedDamage.clear();
 			auto*       av = a_player->AsActorValueOwner();
 			const float max = a_player->GetActorValueMax(RE::ActorValue::kHealth);
 			const float cur = av->GetActorValue(RE::ActorValue::kHealth);
@@ -324,6 +346,24 @@ namespace skycraft
 
 		// A Minecraft hit on an actor's stand-in: real damage, scaled so Minecraft gear stays
 		// meaningful against higher-level enemies, delivered the way a Skyrim weapon would.
+		void HitWeb(RE::PlayerCharacter* a_player)
+		{
+			auto* pick=RE::CrosshairPickData::GetSingleton();
+			auto target=pick ? pick->GetActiveTarget().get() : RE::NiPointer<RE::TESObjectREFR>{};
+			auto* base=target ? target->GetBaseObject() : nullptr;
+			if (!base || base->GetFormType()!=RE::FormType::Activator || !target->Is3DLoaded() ||
+				target->GetPosition().GetDistance(a_player->GetPosition())>3.5f*static_cast<float>(proto::kUnitsPerBlock)) return;
+			auto* model=base->As<RE::TESModel>();
+			const char* path=model ? model->GetModel() : nullptr;
+			if (!path) return;
+			bool web=false;
+			for (const char* p=path; *p; ++p) if (_strnicmp(p,"web",3)==0) {web=true;break;}
+			if (!web) return;
+			RE::TESHitEvent event(target.get(),a_player,0x00012EB7,0,RE::TESHitEvent::Flag::kNone);
+			if (auto* holder=RE::ScriptEventSourceHolder::GetSingleton()) holder->SendEvent(&event);
+			logger::info("Minecraft sword: web OnHit delivered to {:08X} ({})",target->GetFormID(),path);
+		}
+
 		void ApplyHit(RE::PlayerCharacter* a_player, const proto::McEvent& a_ev)
 		{
 			auto* actor = RE::TESForm::LookupByID<RE::Actor>(a_ev.formId);
@@ -856,7 +896,7 @@ namespace skycraft
 				const bool protect = link.McAlive() && State().mcInWorld && !a_player->IsDead();
 				SetEssential(a_player, protect);
 				if (protect) BridgePlayerDamage(a_player, a_delta);
-				else healthPrimed = false;
+				else { healthPrimed = false; capturedDamage.clear(); }
 				engaged = false;
 				// Still drain Minecraft's events so stale hits don't land when control resumes.
 				proto::McEvent ev;
@@ -885,6 +925,9 @@ namespace skycraft
 				switch (ev.type) {
 				case proto::kEvHitActor:
 					ApplyHit(a_player, ev);
+					break;
+				case proto::kEvHitWeb:
+					HitWeb(a_player);
 					break;
 				case proto::kEvPlayerDied:
 					KillPlayer(a_player, ev);

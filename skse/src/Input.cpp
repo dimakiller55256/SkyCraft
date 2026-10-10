@@ -51,6 +51,7 @@ namespace skycraft
 
 		float lookDx = 0.0f;
 		float lookDy = 0.0f;
+		std::array<bool, 256> heldKeys{};
 
 		// G on something Skyrim can activate (door, NPC, container, item, furniture) activates it in
 		// Skyrim. Furniture (chairs, beds, crafting stations, pull-bar levers) hands the player to
@@ -136,6 +137,7 @@ namespace skycraft
 							auto* button = e->AsButtonEvent();
 							const bool down = button->IsDown();
 							const bool up = button->IsUp();
+							if (!route && up) Input::ReleaseAll();
 							if (!route || (!down && !up)) {
 								break;
 							}
@@ -162,6 +164,7 @@ namespace skycraft
 									}
 								}
 								if (const auto sdl = kDikToSdl[code & 0xFF]) {
+									heldKeys[code & 0xFF] = down;
 									link.PushInput(proto::kInKey, sdl, down ? 1 : 0);
 								}
 							} else if (button->GetDevice() == RE::INPUT_DEVICE::kMouse) {
@@ -276,7 +279,23 @@ namespace skycraft
 		void ReleaseAll()
 		{
 			lookDx = lookDy = 0.0f;
+			heldKeys.fill(false);
 			Link::Get().PushInput(proto::kInReleaseAll, 0);
+		}
+
+		void ReconcileKeys()
+		{
+			if (!HasFocus()) return;
+			for (unsigned dik=0; dik<heldKeys.size(); ++dik) {
+				if (!heldKeys[dik]) continue;
+				const auto scan = (dik & 0x80) ? 0xE000u | (dik & 0x7F) : dik;
+				const auto vk = ::MapVirtualKeyExW(scan, MAPVK_VSC_TO_VK_EX, ::GetKeyboardLayout(0));
+				if (vk && !(::GetAsyncKeyState(static_cast<int>(vk)) & 0x8000)) {
+					heldKeys[dik]=false;
+					Link::Get().PushInput(proto::kInKey,kDikToSdl[dik],0);
+					logger::info("input: recovered missed key release (scan {})",dik);
+				}
+			}
 		}
 
 		bool HasFocus()

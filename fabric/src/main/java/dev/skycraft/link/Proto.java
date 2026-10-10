@@ -69,6 +69,7 @@ public final class Proto {
 	public static final int EV_EXPLOSION = 3;
 	public static final int EV_ARROW_STUCK = 4;
 	public static final int EV_SKILL_USE = 5;
+	public static final int EV_HIT_WEB = 6;
 	// Skyrim skills (ActorValue) Minecraft reports use of; weapon skills come from EV_HIT_ACTOR.
 	public static final int SKILL_BLOCK = 9;
 	public static final int SKILL_SMITHING = 10;

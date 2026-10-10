@@ -13,7 +13,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.chunk.LevelChunk;
 
-/** Explicit repair path in addition to Fabric chunk attachments: change push and load request. */
+/** Sole dig synchronization path: coalesced change push plus chunk-load/reconnect requests. */
 public final class DigSync {
     private static final HashSet<LevelChunk> DIRTY = new HashSet<>();
     private static final HashMap<UUID,Integer> REQUESTS = new HashMap<>();
@@ -36,7 +36,8 @@ public final class DigSync {
     }
     public static void init() {
         PayloadTypeRegistry.serverboundPlay().register(Request.TYPE,Request.CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(Snapshot.TYPE,Snapshot.CODEC);
+        // 4096 sections can exceed Minecraft's default 1 MiB custom-payload limit.
+        PayloadTypeRegistry.clientboundPlay().registerLarge(Snapshot.TYPE,Snapshot.CODEC,4*1024*1024);
         ServerPlayNetworking.registerGlobalReceiver(Request.TYPE,(p,c)->c.server().execute(()->{
             var player=c.player();
             if (REQUESTS.merge(player.getUUID(),1,Integer::sum)<=32 && near(player,p.x,p.z)) {

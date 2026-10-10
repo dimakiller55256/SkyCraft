@@ -1,7 +1,7 @@
 # Автоматические тесты SkyCraft
 
 **Архивная инструкция network.3. Для нового второго прогона используйте
-[YS-GAMEPLAY.md](YS-GAMEPLAY.md) / ИГРОВЫЕ-ПРОВЕРКИ.html из комплекта network.6;
+[YS-GAMEPLAY.md](YS-GAMEPLAY.md) / ИГРОВЫЕ-ПРОВЕРКИ.html из комплекта network.7-r8;
 короткий сетевой сценарий — [YS-RETEST.md](YS-RETEST.md).**
 
 Нужен новый Java-мод **0.1.2-ys.network.3**. Нативная DLL остаётся 0.1.2.

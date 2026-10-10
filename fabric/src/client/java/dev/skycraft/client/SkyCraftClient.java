@@ -15,6 +15,11 @@ public final class SkyCraftClient implements ClientModInitializer {
 		NetworkMenu.register();
 		DigSyncClient.init();
 		NetworkClient.register();
+		ActorSyncClient.init();
+		dev.skycraft.combat.SkyrimActorEntity.setLocalPick(actor -> {
+			var player=net.minecraft.client.Minecraft.getInstance().player;
+			return player!=null && actor.ownedBy(player.getUUID());
+		});
 		NetworkDiagnostics.initialize(net.minecraft.client.Minecraft.getInstance());
 		TestAssistant.initialize();
 		// /skycraft host opens a fixed port; /join <address> and /leave switch worlds.

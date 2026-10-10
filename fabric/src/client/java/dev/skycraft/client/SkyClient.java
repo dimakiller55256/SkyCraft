@@ -67,7 +67,7 @@ public final class SkyClient {
 		return sky;
 	}
 	public static boolean positionReady() {
-		return linked && publication.observe(Minecraft.getInstance().player, sky.teleportSeq) && !teleportPending && holdPos == null;
+		return linked && ActorSyncClient.compatible() && publication.observe(Minecraft.getInstance().player, sky.teleportSeq) && !teleportPending && holdPos == null;
 	}
 	public static void worldTransition() {
 		publication.invalidate(); lastPlayer = null; teleportPending = true; holdPos = null; holdSince = 0;
@@ -121,7 +121,7 @@ public final class SkyClient {
 		applyViewportSize(minecraft);
 		MirrorWorld.openWhenReady(minecraft);
 
-		boolean controlsEnabled = !sky.menuOpen() && !sky.loading() && SkyLink.inputFresh();
+		boolean controlsEnabled = !sky.menuOpen() && !sky.loading() && SkyLink.inputFresh() && ActorSyncClient.compatible();
 		if (!controlsEnabled) {
 			InputBridge.releaseAll();
 		}
@@ -216,7 +216,8 @@ public final class SkyClient {
 	 */
 	private static void freezeWhileUnlinked(Minecraft minecraft) {
 		LocalPlayer player = minecraft.player;
-		if (linked || !tookOver || player == null) {
+		if ((linked && SkyLink.inputFresh()) || !tookOver || player == null) {
+			if(linked && SkyLink.inputFresh()) unlinkedHold=null;
 			return;
 		}
 		if (unlinkedHold == null) {
@@ -241,7 +242,7 @@ public final class SkyClient {
 			return;
 		}
 		// A player can be created inside this tick, after beginFrame has already run.
-		if (!publication.observe(player, sky.teleportSeq) || teleportPending) { suppressPublication(); return; }
+		if (!publication.observe(player, sky.teleportSeq) || teleportPending || !ActorSyncClient.compatible()) { suppressPublication(); return; }
 		if (qpcFreq == 0) {
 			qpcFreq = SkyLink.qpcFrequency();
 		}
@@ -280,6 +281,13 @@ public final class SkyClient {
 			return;
 		}
 		if (!publication.observe(player, sky.teleportSeq)) return;
+		if(!ActorSyncClient.compatible()) {
+			player.setDeltaMovement(Vec3.ZERO);
+			player.setPos(sky.x,sky.y,sky.z);
+			player.xo=sky.x;player.yo=sky.y;player.zo=sky.z;
+			player.resetFallDistance();
+			return;
+		}
 		if (!sky.inGame() || sky.loading()) {
 			// Skyrim is on its main menu or a loading screen: park the player where they are.
 			if (holdPos == null) {
@@ -359,7 +367,7 @@ public final class SkyClient {
 		Minecraft minecraft = Minecraft.getInstance();
 		LocalPlayer player = minecraft.player;
 		int flags = 0;
-		boolean initialized = publication.observe(player, sky.teleportSeq) && !teleportPending;
+		boolean initialized = publication.observe(player, sky.teleportSeq) && !teleportPending && ActorSyncClient.compatible();
 		if (player != null && minecraft.level != null && initialized) {
 			float partial = minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(false);
 			Vec3 feet = player.getPosition(partial);

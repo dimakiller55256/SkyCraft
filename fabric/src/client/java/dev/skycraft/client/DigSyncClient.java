@@ -48,11 +48,12 @@ public final class DigSyncClient {
                 var chunk=mc.level.getChunkSource().getChunk(p.x(),p.z(),ChunkStatus.FULL,false);
                 if(chunk==null)continue;
                 for(var s:SkyDig.column(chunk).sections()) dev.skycraft.client.render.WorldExporter.markDirtyNow(p.x(),s.sectionY(),p.z());
+                if(!SkyDig.column(chunk).sections().isEmpty() || !p.column().sections().isEmpty()) SkyDig.wallsChanged();
                 chunk.setAttached(SkyDig.DUG,p.column());
                 for(var s:p.column().sections()) {
                     dev.skycraft.client.render.WorldExporter.markDirtyNow(p.x(),s.sectionY(),p.z());
                 }
-                dev.skycraft.SkyCraft.LOG.info("SkyCraft: dig snapshot received: chunk {} {}, {} world sections",p.x(),p.z(),p.column().sections().size());
+                if(!p.column().sections().isEmpty()) dev.skycraft.SkyCraft.LOG.info("SkyCraft: dig snapshot received: chunk {} {}, {} world sections",p.x(),p.z(),p.column().sections().size());
                 it.remove();
             }
         });

@@ -16,6 +16,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(Projectile.class)
 public abstract class ProjectileMixin {
+	@org.spongepowered.asm.mixin.injection.Inject(method="canHitEntity",at=@At("HEAD"),cancellable=true)
+	private void skycraft$onlyOwnedActors(net.minecraft.world.entity.Entity target,org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+		var owner=((net.minecraft.world.entity.projectile.Projectile)(Object)this).getOwner();
+		if(target instanceof dev.skycraft.combat.SkyrimActorEntity actor && owner instanceof net.minecraft.world.entity.player.Player && !actor.ownedBy(owner.getUUID())) cir.setReturnValue(false);
+	}
 	@Shadow
 	protected abstract void onHit(HitResult hitResult);
 

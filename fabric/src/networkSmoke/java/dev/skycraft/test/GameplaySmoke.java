@@ -31,6 +31,7 @@ final class GameplaySmoke {
     private Path peer;
     private volatile int combatStep,combatAt;
     private volatile String combatResult;
+    private volatile boolean ownershipChecked;
     void initialize(){ClientTickEvents.END_CLIENT_TICK.register(this::tick);}
     private void tick(Minecraft mc) {
         if(done)return;
@@ -68,6 +69,7 @@ final class GameplaySmoke {
                     if(++ticks<15)return;
                     net.minecraft.client.Screenshot.grab(mc.gameDirectory,"gameplay-network-menu.png",mc.gameRenderer.mainRenderTarget(),1,c->{});
                     mc.gui.setScreen(null);
+                    inputCheck(mc);
                     Files.writeString(mc.gameDirectory.toPath().resolve("port.txt"),Integer.toString(port));step=4;
                 }
                 case 4 -> {
@@ -82,6 +84,26 @@ final class GameplaySmoke {
                 }
                 case 6 -> {
                     if(!Files.exists(peer.resolve("rejoined.txt")))return;
+                    if(!Files.exists(peer.resolve("actor-hit.txt"))) {
+                        server.execute(()->{
+                            if(ownershipChecked)return;
+                            var owner=server.getPlayerList().getPlayers().stream().filter(p->p.getPlainTextName().equals("GameplayGuest")).findFirst().orElse(null);
+                            if(owner==null)return;
+                            var own=dev.skycraft.combat.SkyCombat.proxy(owner,0x1234);
+                            if(own==null)return;
+                            try {
+                                var foreign=new dev.skycraft.combat.SkyrimActorEntity(dev.skycraft.combat.SkyCombat.SKYRIM_ACTOR,owner.level());
+                                foreign.setOwner(server.getPlayerList().getPlayers().stream().filter(p->!p.getUUID().equals(owner.getUUID())).findFirst().orElseThrow().getUUID());
+                                foreign.setFormId(0x1234);
+                                if(foreign.hurtServer(owner.level(),owner.level().damageSources().playerAttack(owner),4))throw new IllegalStateException("Foreign actor accepted guest attack");
+                                if(!own.hurtServer(owner.level(),owner.level().damageSources().playerAttack(owner),4))throw new IllegalStateException("Owned actor rejected attack");
+                                ownershipChecked=true;
+                                Files.writeString(mc.gameDirectory.toPath().resolve("ownership.txt"),"PASS: identical FormID scoped to owner; foreign attack rejected; own attack accepted");
+                            }catch(Exception e){combatResult="FAIL: "+e;}
+                        });
+                        if(combatResult!=null)throw new IllegalStateException(combatResult);
+                        return;
+                    }
                     server.execute(()->{
                         if(combatResult!=null)return;
                         try {
@@ -112,7 +134,7 @@ final class GameplaySmoke {
                     if(combatResult!=null){if(!combatResult.equals("PASS"))throw new IllegalStateException(combatResult);step=5;}
                 }
                 case 5 -> {
-                    if(Files.exists(peer.resolve("smoke-result.txt")))finish(mc,"PASS: LAN menu; guest PLAY; DigOpen host/guest; chunk-load resync; shield blocked front hit; iron armor mitigated capped melee");
+                    if(Files.exists(peer.resolve("smoke-result.txt")))finish(mc,"PASS: LAN menu; guest PLAY; DigOpen host/guest; chunk-load resync; shield/armor; NPC ownership and guest hit packet; real keyboard release");
                 }
             }
         }catch(Exception e){dev.skycraft.SkyCraft.LOG.error("Gameplay smoke failed",e);finish(mc,"FAIL: "+e);}
@@ -127,6 +149,7 @@ final class GameplaySmoke {
             ClientPlayNetworking.send(new SkyNet.DigOpen(0x3c,dug,dev.skycraft.link.Proto.DIG_STONE));
             Files.writeString(mc.gameDirectory.toPath().resolve("dug.txt"),dug.getX()+","+dug.getY()+","+dug.getZ());step=2;
         }else if(step==2){
+			if(mc.level==null)throw new IllegalStateException("Disconnected before dig snapshot: "+NetworkClient.lastFailure());
             if(!SkyDig.isDug(mc.level,0x3c,dug)||!Files.exists(peer.resolve("server-dug.txt")))return;
             String log=Files.readString(mc.gameDirectory.toPath().resolve("logs/latest.log"));
             if(!log.contains("1 world sections"))return;
@@ -136,11 +159,29 @@ final class GameplaySmoke {
             NetworkClient.connect(mc,new TitleScreen(),dev.skycraft.network.Endpoint.parse("127.0.0.1:"+Files.readString(peer.resolve("port.txt"))));step=4;
         }else if(step==4){
             if(mc.level==null||mc.player==null||mc.isLocalServer())return;
+            if(mc.gui.screen()!=null)return; // A player/chunk exists before the join loading screen closes.
             if(!SkyDig.isDug(mc.level,0x3c,dug))return;
+            inputCheckOnce(mc);
+            if(ticks++%2==0)ClientPlayNetworking.send(new dev.skycraft.net.ActorSync.Actors(java.util.List.of(new dev.skycraft.link.SkyLink.Actor(0x1234,0,(float)mc.player.getX()+1,(float)mc.player.getY(),(float)mc.player.getZ(),0,0.6f,1.8f,1,1,"Guest actor"))));
+            if(dev.skycraft.client.ActorSyncClient.receivedHits>0)Files.writeString(mc.gameDirectory.toPath().resolve("actor-hit.txt"),"PASS: hit returned through owner clientbound packet");
             mc.options.keyUse.setDown(!Files.exists(peer.resolve("shield-done.txt")));
             Files.writeString(mc.gameDirectory.toPath().resolve("rejoined.txt"),"ready");
             if(Files.exists(peer.resolve("combat.txt")))finish(mc,"PASS: DigOpen mirrored into guest chunk; explicit dig snapshot observed; persisted dig restored after reconnect; combat checks passed on real server");
         }
+    }
+    private boolean inputChecked;
+    private void inputCheckOnce(Minecraft mc)throws Exception{if(!inputChecked){inputCheck(mc);inputChecked=true;}}
+    private static void inputCheck(Minecraft mc)throws Exception {
+        var key=dev.skycraft.client.InputBridge.class.getDeclaredMethod("key",Minecraft.class,long.class,int.class,boolean.class);key.setAccessible(true);
+        long handle=mc.getWindow().handle();
+        key.invoke(null,mc,handle,225,true);key.invoke(null,mc,handle,26,true);
+        if(!mc.options.keyUp.isDown())throw new IllegalStateException("Real shifted W press missed binding (screen="+mc.gui.screen()+", mapping="+mc.options.keyUp.saveString()+")");
+        key.invoke(null,mc,handle,225,false);key.invoke(null,mc,handle,26,false);
+        if(mc.options.keyUp.isDown())throw new IllegalStateException("W remained held after modifier release");
+        mc.options.keyUp.setDown(true);mc.options.keyUse.setDown(true);
+        dev.skycraft.client.InputBridge.releaseAll();
+        if(mc.options.keyUp.isDown()||mc.options.keyUse.isDown())throw new IllegalStateException("Orphan bindings survived releaseAll");
+        Files.writeString(mc.gameDirectory.toPath().resolve("input-check.txt"),"PASS: actual keyPress Shift+W/release; orphan movement and use bindings cleared");
     }
     private static void press(Minecraft mc,String label){((Button)Screens.getWidgets(mc.gui.screen()).stream().filter(w->w instanceof Button&&w.getMessage().getString().equals(label)).findFirst().orElseThrow()).onPress(new KeyEvent(257,0,0));}
     private void finish(Minecraft mc,String result){

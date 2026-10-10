@@ -247,6 +247,7 @@ namespace skycraft::proto
 		                    // flags = flight pitch (float bits), weapon = arrow texture (0 plain, 1 tipped, 2 spectral)
 		kEvSkillUse = 5,    // the player used a Skyrim skill in Minecraft: formId = Skyrim skill (ActorValue: 9 Block,
 		                    // 10 Smithing, 11 Heavy Armor, 12 Light Armor), a = uses (as Skyrim's AdvanceSkill counts them)
+		kEvHitWeb = 6,     // Minecraft sword click: OnHit only for a nearby crosshair web activator
 	};
 
 	enum HitFlags : std::uint32_t

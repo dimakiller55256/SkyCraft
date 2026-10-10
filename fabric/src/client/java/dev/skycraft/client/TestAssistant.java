@@ -198,6 +198,12 @@ public final class TestAssistant {
 		data.put("peerSession", NetworkClient.peerSession());
 		data.put("positionReady", SkyClient.positionReady());
 		data.put("skyrimWorldId", Integer.toHexString(SkyClient.sky().worldId));
+		data.put("hostSkyrimWorldId",Integer.toHexString(ActorSyncClient.hostWorldId()));
+		data.put("worldCompatible",ActorSyncClient.compatible());
+		data.put("shieldRaised",mc.player!=null && mc.player.isBlocking());
+		data.put("health",mc.player==null?0:mc.player.getHealth());
+		data.put("armor",mc.player==null?0:mc.player.getArmorValue());
+		data.put("actorHitsReceived",ActorSyncClient.receivedHits);
 		data.put("collisionEpoch", SkyClient.sky().collisionEpoch);
 		data.put("inputFresh", dev.skycraft.link.SkyLink.inputFresh());
 		data.put("skyPosition", Map.of("x", SkyClient.sky().x, "y", SkyClient.sky().y, "z", SkyClient.sky().z));

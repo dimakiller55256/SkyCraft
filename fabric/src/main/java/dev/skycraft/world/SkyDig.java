@@ -11,7 +11,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.LongStream;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentRegistry;
-import net.fabricmc.fabric.api.attachment.v1.AttachmentSyncPredicate;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -53,6 +52,7 @@ import org.jspecify.annotations.Nullable;
  * around them; the server just applies it.
  */
 public final class SkyDig {
+	public static final int MAX_DUG_SECTIONS=4096;
 	private SkyDig() {
 	}
 
@@ -65,7 +65,7 @@ public final class SkyDig {
 		).apply(i, DugSection::new));
 	}
 
-	/** A chunk's dug cells. Immutable: changes make a new one (so the attachment syncs). */
+	/** A chunk's dug cells. Immutable; DigSync sends explicit bounded snapshots to clients. */
 	public record DugColumn(List<DugSection> sections) {
 		public static final DugColumn EMPTY = new DugColumn(List.of());
 		static final Codec<DugColumn> CODEC = DugSection.CODEC.listOf().xmap(DugColumn::new, DugColumn::sections);
@@ -73,7 +73,7 @@ public final class SkyDig {
 			@Override
 			public DugColumn decode(ByteBuf buf) {
 				int n = ByteBufCodecs.VAR_INT.decode(buf);
-				if (n < 0 || n > 4096 || n > buf.readableBytes() / 517) throw new IllegalArgumentException("Invalid dug section count");
+				if (n < 0 || n > MAX_DUG_SECTIONS || n > buf.readableBytes() / 517) throw new IllegalArgumentException("Invalid dug section count");
 				List<DugSection> sections = new ArrayList<>(n);
 				for (int i = 0; i < n; i++) {
 					int world = buf.readInt();
@@ -89,6 +89,7 @@ public final class SkyDig {
 
 			@Override
 			public void encode(ByteBuf buf, DugColumn column) {
+				if(column.sections.size()>MAX_DUG_SECTIONS) throw new IllegalArgumentException("Invalid dug section count");
 				ByteBufCodecs.VAR_INT.encode(buf, column.sections.size());
 				for (DugSection s : column.sections) {
 					buf.writeInt(s.world);
@@ -141,7 +142,8 @@ public final class SkyDig {
 
 	public static final AttachmentType<DugColumn> DUG = AttachmentRegistry.<DugColumn>builder()
 		.persistent(DugColumn.CODEC)
-		.syncWith(DugColumn.STREAM_CODEC, AttachmentSyncPredicate.all())
+		// Explicit DigSync is the sole network path. The redundant Fabric attachment sync
+		// was observed to disconnect 26.3 peers with a nonpositive maxPacketSize.
 		.buildAndRegister(Identifier.fromNamespaceAndPath(SkyCraft.MOD_ID, "dug"));
 
 	/** Loads the class (registers the attachment) at mod start. */

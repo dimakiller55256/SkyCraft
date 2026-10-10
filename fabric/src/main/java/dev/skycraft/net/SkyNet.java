@@ -94,6 +94,7 @@ public final class SkyNet {
 	}
 
 	public static void init() {
+		ActorSync.init();
 		DigSync.init();
 		PayloadTypeRegistry.clientboundPlay().register(TestSession.TYPE, TestSession.CODEC);
 		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
@@ -115,13 +116,14 @@ public final class SkyNet {
 		});
 		PayloadTypeRegistry.clientboundPlay().register(Died.TYPE, Died.CODEC);
 		ServerPlayNetworking.registerGlobalReceiver(Hurt.TYPE, (payload, context) -> {
+			if(!Float.isFinite(payload.skyrimDamage())) return;
 			ServerPlayer player = context.player();
 			// A hit's worth of damage, whatever the guest's client claims (friends only, but still).
 			float damage = Math.max(0.0F, Math.min(payload.skyrimDamage(), 10000.0F));
 			var position=payload.hasPosition() && Float.isFinite(payload.x()) && Float.isFinite(payload.y()) && Float.isFinite(payload.z())
 				? new net.minecraft.world.phys.Vec3(payload.x(),payload.y(),payload.z()) : null;
-			// A guest's FormID belongs to their Skyrim, never select a host NPC by coincidence.
-			context.server().execute(() -> SkyCombat.hurtPlayer(player, payload.kind(), damage, 0, payload.flags(), position));
+			// SkyCombat scopes FormIDs to this player's actor table.
+			context.server().execute(() -> SkyCombat.hurtPlayer(player, payload.kind(), damage, payload.attackerFormId(), payload.flags(), position));
 		});
 	}
 

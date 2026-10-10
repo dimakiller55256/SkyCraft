@@ -28,8 +28,11 @@ public final class InputBridge {
 		return scancode >= 0 && scancode < KEYS.length && KEYS[scancode];
 	}
 
-	public static void drain(Minecraft minecraft) {
-		SkyLink.drainInput((type, code, a, b, c) -> dispatch(minecraft, type, code, a, b, c));
+	public static void drain(Minecraft minecraft, boolean controlsEnabled) {
+		SkyLink.drainInput((type, code, a, b, c) -> {
+			if (dev.skycraft.link.InputSafety.accept(type, controlsEnabled)) dispatch(minecraft, type, code, a, b, c);
+		});
+		if (!controlsEnabled) releaseAll();
 	}
 
 	private static void dispatch(Minecraft minecraft, int type, int code, int a, int b, int c) {
@@ -83,7 +86,11 @@ public final class InputBridge {
 		if (server == null) {
 			// A guest in a friend's world: the host's server applies it.
 			if (net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(dev.skycraft.net.SkyNet.Hurt.TYPE)) {
-				net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new dev.skycraft.net.SkyNet.Hurt(kind, skyrimDamage, attacker, flags));
+				java.util.List<SkyLink.Actor> actors=new java.util.ArrayList<>();
+				SkyLink.readActors(actors);
+				var origin=actors.stream().filter(v->v.formId()==attacker).findFirst().orElse(null);
+				net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new dev.skycraft.net.SkyNet.Hurt(kind, skyrimDamage, attacker, flags,
+					origin!=null,origin==null?0:origin.x(),origin==null?0:origin.y(),origin==null?0:origin.z()));
 			}
 			return;
 		}

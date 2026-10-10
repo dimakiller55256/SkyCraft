@@ -186,6 +186,10 @@ public final class SkyCombat {
 	 * {@code skyrimDamage} is what Skyrim would have taken off the player's health.
 	 */
 	public static void hurtPlayer(ServerPlayer player, int kind, float skyrimDamage, int attackerFormId, int flags) {
+		hurtPlayer(player,kind,skyrimDamage,attackerFormId,flags,null);
+	}
+
+	public static void hurtPlayer(ServerPlayer player, int kind, float skyrimDamage, int attackerFormId, int flags, net.minecraft.world.phys.Vec3 origin) {
 		if (!player.isAlive() || skyrimDamage <= 0.0F) {
 			return;
 		}
@@ -196,12 +200,16 @@ public final class SkyCombat {
 		}
 		DamageSources sources = level.damageSources();
 		DamageSource source = switch (kind) {
-			case Proto.HURT_MELEE -> attacker != null ? sources.mobAttack(attacker) : sources.generic();
-			case Proto.HURT_PROJECTILE -> attacker != null ? sources.mobProjectile(attacker, attacker) : sources.generic();
+			case Proto.HURT_MELEE -> attacker != null ? sources.mobAttack(attacker) : new DamageSource(level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE).getOrThrow(net.minecraft.world.damagesource.DamageTypes.MOB_ATTACK));
+			case Proto.HURT_PROJECTILE -> attacker != null ? sources.mobProjectile(attacker, attacker) : new DamageSource(level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE).getOrThrow(net.minecraft.world.damagesource.DamageTypes.MOB_PROJECTILE));
 			case Proto.HURT_MAGIC -> attacker != null ? sources.indirectMagic(attacker, attacker) : sources.magic();
 			default -> sources.generic();
 		};
-		float damage = skyrimDamage / SKYRIM_TO_MC_DAMAGE;
+		if (origin!=null && origin.distanceToSqr(player.position())<=24*24) {
+			// Preserve the guest's own attack direction so vanilla shields can test the front arc.
+			source=new DamageSource(source.typeHolder(),origin);
+		}
+		float damage = DamageBalance.convert(kind, skyrimDamage, SKYRIM_TO_MC_DAMAGE, 12.0F);
 		float healthBefore = player.getHealth();
 		boolean blocking = player.isBlocking();
 		boolean hurt = player.hurtServer(level, source, damage);

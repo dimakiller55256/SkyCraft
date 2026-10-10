@@ -17,9 +17,12 @@ param(
     [string]$SkseLog,
     [ValidatePattern('^[A-Za-z0-9_.-]+\.jsonl$')][string]$TraceFileName,
     [switch]$IncludeLatestAutoTrace,
-    [switch]$IncludeGameLogs
+    [switch]$IncludeGameLogs,
+    [switch]$IncludeGameplayDiagnostics,
+    [string]$StartedUtc
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'skycraft-package-common.ps1')
 $roleName = $Role.ToLowerInvariant()
 $repoDirectory = Split-Path -Parent $PSScriptRoot
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repoDirectory 'reports' }
@@ -154,7 +157,7 @@ Collect-Section 'system-proxy' {
 Collect-Section 'mod-versions' {
     Get-ChildItem -LiteralPath (Join-Path $gamePath 'mods') -File |
         Where-Object Name -match '^(skycraft-|fabric-api-|e4mc-).*\.jar$' | ForEach-Object {
-            [pscustomobject]@{File = $_.Name; Size = $_.Length; Sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
+            [pscustomobject]@{File = $_.Name; Size = $_.Length; Sha256 = (Get-SkyCraftFileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
         }
     $packFile = Join-Path (Split-Path -Parent $gamePath) 'mmc-pack.json'
     if (Test-Path -LiteralPath $packFile) {
@@ -282,6 +285,36 @@ if ($IncludeGameLogs) {
         if (Test-Path -LiteralPath $path) { Copy-Item -LiteralPath $path -Destination $reportPath }
     }
 }
+if ($IncludeGameplayDiagnostics) {
+    $runStarted = if($StartedUtc){[DateTime]::Parse($StartedUtc,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()}else{[DateTime]::UtcNow.AddHours(-6)}
+    $diagnostics = Join-Path $reportPath 'gameplay'
+    New-Item -ItemType Directory -Path $diagnostics | Out-Null
+    $index = New-Object 'System.Collections.Generic.List[object]'
+    $nativeFolder = Split-Path -Parent $SkseLog
+    $candidates = @($SkseLog, (Join-Path $nativeFolder 'SkyCraft_crash.dmp'), (Join-Path $nativeFolder 'skse64.log'), (Join-Path $nativeFolder 'SkyrimTogetherReborn.log'))
+    if (Test-Path -LiteralPath $nativeFolder) {
+        $candidates += @(Get-ChildItem -LiteralPath $nativeFolder -File -Filter 'crash-*.log' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2 -ExpandProperty FullName)
+    }
+    foreach ($candidate in $candidates) {
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+        $file = Get-Item -LiteralPath $candidate
+        $fresh = $file.LastWriteTimeUtc -ge [DateTime]::UtcNow.AddHours(-6)
+        $sinceRun = $file.LastWriteTimeUtc -ge $runStarted
+        $copy = $fresh -and $file.Length -le 64MB -and ($file.Extension -ne '.dmp' -or $sinceRun)
+        if ($copy) {
+            try { Copy-Item -LiteralPath $file.FullName -Destination $diagnostics -ErrorAction Stop }
+            catch { $copy=$false; $collectorErrors.Add([pscustomobject]@{Section='gameplay-copy'; ErrorType=$_.Exception.GetType().Name; HResult=$_.Exception.HResult}) }
+        }
+        $index.Add([pscustomobject]@{Name=$file.Name; LastWriteUtc=$file.LastWriteTimeUtc.ToString('o'); Bytes=$file.Length; Copied=$copy; SinceRunStarted=$sinceRun; Sha256=if($copy){(Get-SkyCraftFileHash -LiteralPath (Join-Path $diagnostics $file.Name)).Hash}else{$null}; Note=if($fresh){'Local file, correlate timestamp with this run; dumps preceding the run are not copied'}else{'Older than 6 hours; not copied'}})
+    }
+    $latest = Join-Path $gamePath 'logs\latest.log'
+    if (Test-Path -LiteralPath $latest) {
+        # Bounded relevant lines; launcher accounts, saves and proxy credentials are never selected.
+        $relevant = @(Get-Content -LiteralPath $latest -Tail 20000 -Encoding UTF8 | Where-Object { $_ -match '(?i)skycraft|dig snapshot|exception|caused by|disconnected|invalid session' })
+        [IO.File]::WriteAllLines((Join-Path $diagnostics 'minecraft-gameplay.log'),[string[]]$relevant,(New-Object Text.UTF8Encoding($true)))
+    }
+    Save-Json 'gameplay-files.json' @($index.ToArray())
+}
 @"
 SkyCraft — локальный сетевой отчёт
 Прогон: $RunId / $roleName. Результат указан тестировщиком: $Result.
@@ -290,6 +323,7 @@ traces — исходные JSONL логи; collection-errors.json — недо�
 Архив содержит IP-адреса, названия адаптеров, маршруты и ручные заметки.
 Пароли прокси, токены и игровые пакеты автоматически не собираются.
 Полные игровые логи включены: $([bool]$IncludeGameLogs). Они могут содержать чат и имена.
+Игровая диагностика включена: $([bool]$IncludeGameplayDiagnostics). gameplay может содержать дамп памяти Skyrim, имена и пути. Передавайте ZIP только тем, кому доверяете; не публикуйте его на GitHub.
 Ничего не отправлялось в Интернет; DNS-запрос к заданной цели возможен.
 Присутствие процесса/адаптера не доказывает, что VPN или фильтр был активен.
 Успех TCP не является проверкой совместной игры. В таблице заполните наблюдения обоих игроков.

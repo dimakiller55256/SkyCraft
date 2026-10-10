@@ -27,6 +27,7 @@ loom {
 			sourceSet sourceSets.client
 		}
 	}
+
 }
 
 dependencies {
@@ -68,6 +69,35 @@ if (providers.gradleProperty("networkSmoke").isPresent()) {
 					if (providers.gradleProperty("assistantWorldSmoke").isPresent()) vmArgs "-Dskycraft.assistantWorldSmoke=true", "-Dskycraft.link=Local\\SkyCraft_world_smoke"
 				programArgs "--username", "NetworkSmoke"
 			}
+		}
+	}
+	if (providers.gradleProperty('gameplaySmoke').isPresent()) {
+		loom.runs {
+			gameplayHostClient {
+				client(); sourceSet = sourceSets.networkSmoke.name
+				runDirectory = '../.tools/gameplay-host'
+				vmArgs '-Xmx512m', '-XX:ActiveProcessorCount=2', '-XX:ReservedCodeCacheSize=128m', '--enable-native-access=ALL-UNNAMED', '-Dskycraft.gameplaySmokeRole=host', '-Dskycraft.startHidden=true', '-Dskycraft.quitWithSkyrim=false', '-Dskycraft.discordAppId=0', '-Dskycraft.link=Local\\SkyCraft_gameplay_host'
+				programArgs '--username', 'GameplayHost'
+			}
+			gameplayGuestClient {
+				client(); sourceSet = sourceSets.networkSmoke.name
+				runDirectory = '../.tools/gameplay-client'
+				vmArgs '-Xmx512m', '-XX:ActiveProcessorCount=2', '-XX:ReservedCodeCacheSize=128m', '--enable-native-access=ALL-UNNAMED', '-Dskycraft.gameplaySmokeRole=client', '-Dskycraft.startHidden=true', '-Dskycraft.quitWithSkyrim=false', '-Dskycraft.discordAppId=0', '-Dskycraft.link=Local\\SkyCraft_gameplay_client'
+				programArgs '--username', 'GameplayGuest'
+			}
+		}
+		tasks.register('exportGameplayLaunch') {
+			def exports = [tasks.named('runGameplayHostClient'), tasks.named('runGameplayGuestClient')]
+			dependsOn exports.collectMany { it.get().taskDependencies.getDependencies(it.get()) }
+			doLast { exports.each { provider ->
+				def run = provider.get(); def jvm = run.allJvmArgs.findAll { !it.startsWith('@') }
+				def launchArgs = jvm + ['-classpath',run.classpath.asPath,run.mainClass.get()] + run.args + ['--username', run.name.contains('Host')?'GameplayHost':'GameplayGuest']
+				def argsFile = file("../.tools/${run.name}.args")
+				argsFile.text = launchArgs.collect { '"' + it.replace('\\','\\\\').replace('"','\\"') + '"' }.join('\n')
+				file("../.tools/${run.name}.json").text = groovy.json.JsonOutput.toJson([java:run.javaLauncher.get().executablePath.asFile.absolutePath,
+					args:['@'+argsFile.absolutePath],
+					workingDirectory:file('../.tools/gameplay-' + (run.name.contains('Host')?'host':'client')).absolutePath])
+			} }
 		}
 	}
 }

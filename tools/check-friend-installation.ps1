@@ -25,7 +25,7 @@ try {
     foreach ($file in Get-ChildItem -LiteralPath $modsPath -File -Filter '*.jar') {
         try { $meta = Read-FabricMetadata $file.FullName }
         catch { Check 'jar_read' 'WARN' "Не прочитан JAR $($file.Name): $($_.Exception.GetType().Name)"; continue }
-        if ($meta.id -in @('skycraft','e4mc','fabric-api')) { $mods += [pscustomobject]@{File=$file.Name; Id=$meta.id; Version=$meta.version; Sha256=(Get-FileHash -LiteralPath $file.FullName).Hash} }
+        if ($meta.id -in @('skycraft','e4mc','fabric-api')) { $mods += [pscustomobject]@{File=$file.Name; Id=$meta.id; Version=$meta.version; Sha256=(Get-SkyCraftFileHash -LiteralPath $file.FullName).Hash} }
     }
     $details.Mods = $mods
     $skycraft = @($mods | Where-Object Id -eq 'skycraft')
@@ -73,11 +73,11 @@ try {
     foreach ($root in $roots) {
         $plugin = Join-Path $root 'SKSE\Plugins\SkyCraft.dll'
         $library = Join-Path $root ('SKSE\Plugins\' + $manifest.requirements.addressLibrary)
-        if (Test-Path -LiteralPath $plugin) { $pluginCandidates += [pscustomobject]@{Path=$plugin; Sha256=(Get-FileHash -LiteralPath $plugin).Hash} }
+        if (Test-Path -LiteralPath $plugin) { $pluginCandidates += [pscustomobject]@{Path=$plugin; Sha256=(Get-SkyCraftFileHash -LiteralPath $plugin).Hash} }
         if (Test-Path -LiteralPath $library) { $libraryCandidates += $library }
     }
     $details.NativePluginCandidates = $pluginCandidates; $details.AddressLibraryCandidates = $libraryCandidates
-    if (@($pluginCandidates | Where-Object Sha256 -eq $manifest.nativeDll.sha256).Count) { Check 'native_plugin' 'PASS' 'Найдена исходная SkyCraft.dll 0.1.2, совпадающая с проверенной DLL. Убедитесь, что именно её мод включён в MO2.' } else { Check 'native_plugin' 'WARN' 'Проверенная DLL не найдена в указанных папках. Укажите каталог mods MO2 или проверьте установленный SkyCraft.' }
+    if (@($pluginCandidates | Where-Object Sha256 -eq $manifest.nativeDll.sha256).Count) { Check 'native_plugin' 'PASS' "Найдена SkyCraft.dll для комплекта $($manifest.version). Убедитесь, что именно её мод включён в MO2." } else { Check 'native_plugin' 'WARN' 'DLL из этого комплекта не найдена. Для исправления дверей/ввода/падения обновите также Skyrim-часть; укажите каталог mods MO2.' }
     if ($libraryCandidates.Count) { Check 'address_library' 'PASS' 'Файл Address Library для runtime найден. Его мод должен быть включён в MO2.' } else { Check 'address_library' 'WARN' 'Файл Address Library не найден; проверьте mods MO2 и библиотеку для runtime. Физические папки не показывают активность мода.' }
     if ($ModsDirectory -and [IO.Path]::GetFullPath($ModsDirectory).StartsWith($skyrimPath + '\', [StringComparison]::OrdinalIgnoreCase)) {
         $longPaths = New-Object 'System.Collections.Generic.List[string]'

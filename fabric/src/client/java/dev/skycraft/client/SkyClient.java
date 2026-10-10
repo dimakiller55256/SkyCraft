@@ -27,7 +27,7 @@ public final class SkyClient {
 	private static final SkyLink.SkyState sky = new SkyLink.SkyState();
 	private static final SkyLink.McState mc = new SkyLink.McState();
 	private static volatile boolean linked;
-	private static boolean tookOver;
+	private static volatile boolean tookOver;
 	private static boolean windowHidden;
 	private static int appliedViewportW, appliedViewportH;
 
@@ -121,10 +121,11 @@ public final class SkyClient {
 		applyViewportSize(minecraft);
 		MirrorWorld.openWhenReady(minecraft);
 
-		if (sky.menuOpen() || sky.loading()) {
+		boolean controlsEnabled = !sky.menuOpen() && !sky.loading() && SkyLink.inputFresh();
+		if (!controlsEnabled) {
 			InputBridge.releaseAll();
 		}
-		InputBridge.drain(minecraft);
+		InputBridge.drain(minecraft, controlsEnabled);
 		ProxySync.frame(minecraft);
 
 		LocalPlayer player = minecraft.player;

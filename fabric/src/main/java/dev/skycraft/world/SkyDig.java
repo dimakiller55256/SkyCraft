@@ -69,10 +69,11 @@ public final class SkyDig {
 	public record DugColumn(List<DugSection> sections) {
 		public static final DugColumn EMPTY = new DugColumn(List.of());
 		static final Codec<DugColumn> CODEC = DugSection.CODEC.listOf().xmap(DugColumn::new, DugColumn::sections);
-		static final StreamCodec<ByteBuf, DugColumn> STREAM_CODEC = new StreamCodec<>() {
+		public static final StreamCodec<ByteBuf, DugColumn> STREAM_CODEC = new StreamCodec<>() {
 			@Override
 			public DugColumn decode(ByteBuf buf) {
 				int n = ByteBufCodecs.VAR_INT.decode(buf);
+				if (n < 0 || n > 4096 || n > buf.readableBytes() / 517) throw new IllegalArgumentException("Invalid dug section count");
 				List<DugSection> sections = new ArrayList<>(n);
 				for (int i = 0; i < n; i++) {
 					int world = buf.readInt();
@@ -180,6 +181,7 @@ public final class SkyDig {
 			return;
 		}
 		chunk.setAttached(DUG, column.with(world, pos.getX(), pos.getY(), pos.getZ()));
+		dev.skycraft.net.DigSync.changed(chunk);
 		BlockState state = materialState(material);
 		if (!player.isCreative()) {
 			ItemStack tool = player.getMainHandItem();
@@ -223,6 +225,7 @@ public final class SkyDig {
 			return false;
 		}
 		chunk.setAttached(DUG, column.with(world, pos.getX(), pos.getY(), pos.getZ()));
+		dev.skycraft.net.DigSync.changed(chunk);
 		return true;
 	}
 

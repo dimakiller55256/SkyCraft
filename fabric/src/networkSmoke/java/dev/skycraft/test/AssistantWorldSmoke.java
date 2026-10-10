@@ -88,7 +88,8 @@ final class AssistantWorldSmoke {
 				}
 				case 4 -> {
 					if (!state.getAsJsonObject("detail").get("success").getAsBoolean()) throw new java.io.IOException("Host probe failed");
-					if (!state.getAsJsonObject("peerSession").has("version") || !state.getAsJsonObject("peerSession").get("version").getAsString().equals("0.1.2-ys.network.5")) throw new java.io.IOException("Server session metadata missing");
+					if (!state.getAsJsonObject("peerSession").has("version") || !state.getAsJsonObject("peerSession").get("version").getAsString().equals(
+						net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("skycraft").orElseThrow().getMetadata().getVersion().getFriendlyString())) throw new java.io.IOException("Server session metadata missing");
 					request(5, "probe", Map.of("target", "127.0.0.1:" + closedPort));
 				}
 				case 5 -> {

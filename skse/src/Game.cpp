@@ -383,6 +383,9 @@ namespace skycraft
 		// up again from wherever Skyrim leaves them.
 		const char* SkyrimTakeover(RE::PlayerCharacter* a_player)
 		{
+			if (a_player->IsEssentialDown() || a_player->IsInRagdollState()) {
+				return "knockdown/ragdoll";
+			}
 			if (a_player->AsActorState()->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal) {
 				return "furniture";
 			}
@@ -552,7 +555,7 @@ namespace skycraft
 
 			auto*      cell = a_player->GetParentCell();
 			const bool loading = !cell || !a_player->Is3DLoaded() || ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
-			const bool menu = AnyBlockingMenuOpen(ui);
+			const bool menu = AnyBlockingMenuOpen(ui) || !Input::HasFocus();
 			if ((menu || loading) && !st.skyrimMenuOpen) {
 				Input::ReleaseAll();
 			}

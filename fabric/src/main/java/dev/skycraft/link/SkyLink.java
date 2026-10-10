@@ -90,6 +90,14 @@ public final class SkyLink {
 		return tickCount() - beat < HEARTBEAT_TIMEOUT_MS;
 	}
 
+	/** Input must stop promptly when Skyrim stops updating, even during its link grace period. */
+	public static boolean inputFresh() {
+		MemorySegment s = shm;
+		if (s == null) return false;
+		long age = tickCount() - (long) LONG.getAcquire(s, OFF_HEADER + H_SKYRIM_HEARTBEAT);
+		return InputSafety.fresh(age);
+	}
+
 	/** Bumps whenever a (new) Skyrim instance is on the other end: everything Skyrim caches must be resent. */
 	public static int generation() {
 		return generation;

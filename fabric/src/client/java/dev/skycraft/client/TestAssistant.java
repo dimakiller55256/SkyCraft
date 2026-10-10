@@ -197,6 +197,9 @@ public final class TestAssistant {
 		data.put("lastFailure", NetworkClient.failureDetails());
 		data.put("peerSession", NetworkClient.peerSession());
 		data.put("positionReady", SkyClient.positionReady());
+		data.put("skyrimWorldId", Integer.toHexString(SkyClient.sky().worldId));
+		data.put("collisionEpoch", SkyClient.sky().collisionEpoch);
+		data.put("inputFresh", dev.skycraft.link.SkyLink.inputFresh());
 		data.put("skyPosition", Map.of("x", SkyClient.sky().x, "y", SkyClient.sky().y, "z", SkyClient.sky().z));
 		data.put("teleportSeq", SkyClient.sky().teleportSeq);
 		data.put("world", mc.level == null || mc.player == null ? "none" : mc.isLocalServer() ? "local" : "remote");

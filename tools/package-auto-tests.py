@@ -19,17 +19,19 @@ def build(friend, output):
         names={'SkyCraft-Хост.exe','SkyCraft-Клиент.exe','SkyCraft-Без-друга.exe','АВТОТЕСТЫ.html','LICENSE.txt','THIRD-PARTY-NOTICES.md',manifest['fabricJar']['file']}
         names.update('tools/'+name for name in ['assistant-worker.ps1','skycraft-package-common.ps1','install-friend-update.ps1','check-friend-installation.ps1','collect-network-report.ps1','collect-test-environment.ps1'])
         names.update(name for name in z.namelist() if name.startswith('docs/'))
+        names.add('ИГРОВЫЕ-ПРОВЕРКИ.html')
+        if manifest['nativeDll']['changed']:names.add('native/SkyCraft.dll')
         entries={name:z.read(name) for name in names}
     manifest.pop('mo2Archive');manifest.pop('prismInstance')
     manifest['kind']='automatic-test-update';manifest['requiresExistingSkyCraft']=True
     entries['package-manifest.json']=(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode('utf-8')
-    entries['НАЧАТЬ.txt']=('Автоматические тесты для уже работающего SkyCraft 0.1.2\r\n'
+    entries['НАЧАТЬ.txt']=(f'Обновление и автоматические тесты SkyCraft {manifest["version"]}\r\n'
         '1. Распаковать весь ZIP вне Skyrim.\r\n'
-        '2. Открыть АВТОТЕСТЫ.html.\r\n'
+        '2. Открыть ИГРОВЫЕ-ПРОВЕРКИ.html (актуальная инструкция).\r\n'
         '3. Выбрать SkyCraft-Хост.exe / SkyCraft-Клиент.exe / SkyCraft-Без-друга.exe.\r\n'
-        '4. При закрытых Skyrim/Minecraft нажать «Обновить мод»: нужен network.5 на обоих ПК.\r\n'
-        '5. MO2/SKSE -> отдельное тестовое сохранение -> помощник -> «Начать автотест».\r\n'
-        '6. Хост передаёт новый код SCY2 клиенту; после теста «Открыть отчёты».\r\n'
+        '4. При закрытых Skyrim/Minecraft нажать «Обновить мод»: нужен network.6 JAR и DLL на обоих ПК. Выберите установленную SkyCraft.dll в MO2 -> SkyCraft -> SKSE -> Plugins.\r\n'
+        '5. MO2/SKSE -> отдельное тестовое сохранение -> помощник -> «Игровой тест до остановки».\r\n'
+        '6. Хост передаёт новый код SCY2 клиенту; в конце «Остановить и собрать отчёт» -> «Открыть отчёты».\r\n'
         'В маленьком комплекте нет полного MO2/Prism для новой установки; для неё нужен friend-kit.\r\n').encode('utf-8-sig')
     entries['SHA256.txt']=''.join(package.sha(value)+'  '+name+'\n' for name,value in sorted(entries.items())).encode('utf-8')
     output.mkdir(parents=True,exist_ok=True)

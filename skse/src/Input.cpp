@@ -1,4 +1,5 @@
 #include "Game.h"
+#include "Collision.h"
 
 namespace skycraft
 {
@@ -67,6 +68,9 @@ namespace skycraft
 				return;
 			}
 			target->ActivateRef(player, 0, nullptr, 0, false);
+			if (target->GetBaseObject() && target->GetBaseObject()->GetFormType() == RE::FormType::Door) {
+				Collision::Get().RefreshNear(SkyToMc(target->GetPosition()));
+			}
 			logger::info("activated {:08X} ({})", target->GetFormID(), target->GetDisplayFullName());
 		}
 
@@ -98,7 +102,7 @@ namespace skycraft
 				auto& st = State();
 				auto& link = Link::Get();
 				// Menus that pause the game stop the per-frame update, so check them here.
-				const bool menuOpen = Game::SkyrimMenuOpen();
+				const bool menuOpen = Game::SkyrimMenuOpen() || !Input::HasFocus();
 				if (menuOpen && !st.skyrimMenuOpen) {
 					Input::ReleaseAll();
 				}
@@ -271,7 +275,15 @@ namespace skycraft
 
 		void ReleaseAll()
 		{
+			lookDx = lookDy = 0.0f;
 			Link::Get().PushInput(proto::kInReleaseAll, 0);
+		}
+
+		bool HasFocus()
+		{
+			DWORD pid = 0;
+			if (auto window = ::GetForegroundWindow()) ::GetWindowThreadProcessId(window, &pid);
+			return pid == ::GetCurrentProcessId();
 		}
 
 		void SetActivatePromptKey(bool a_minecraftControls)

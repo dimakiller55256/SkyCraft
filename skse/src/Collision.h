@@ -34,6 +34,8 @@ namespace skycraft
 		// Blocks dug out of (or back into) Skyrim's world: the regions around them are sent again,
 		// ahead of everything else, without Skyrim's diggable geometry in dug blocks. Main thread.
 		void DigChanged(const std::vector<std::array<int, 3>>& a_blocks);
+		// Doors move their Havok bodies; refresh both sides and the region above the feet.
+		void RefreshNear(const McVec& a_position);
 
 	private:
 		// flags: proto::ColTriFlags (kTriDiggable, the DigMaterial in bits 8-15).

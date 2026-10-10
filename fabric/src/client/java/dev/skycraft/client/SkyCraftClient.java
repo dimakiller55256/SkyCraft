@@ -12,6 +12,8 @@ public final class SkyCraftClient implements ClientModInitializer {
 		dev.skycraft.link.SkyLink.announceRunning();
 		DiscordPresence.start();
 		DestructionToggle.register();
+		NetworkMenu.register();
+		DigSyncClient.init();
 		NetworkClient.register();
 		NetworkDiagnostics.initialize(net.minecraft.client.Minecraft.getInstance());
 		TestAssistant.initialize();
@@ -63,6 +65,8 @@ public final class SkyCraftClient implements ClientModInitializer {
 		// Players (client-side movement AND the integrated server's re-check of it) use the smooth
 		// triangle collider, never Skyrim's voxels; otherwise the server sees the smooth position
 		// dip into a voxel and teleports the player back every few ticks.
-		dev.skycraft.world.SkyCollision.setSmoothCollider(e -> e instanceof net.minecraft.world.entity.player.Player && SkyClient.linked());
+		// A paused/alt-tabbed Skyrim stops its heartbeat. Keep the server's collision policy:
+		// switching guests back to the host's voxel approximation causes correction loops.
+		dev.skycraft.world.SkyCollision.setSmoothCollider(e -> e instanceof net.minecraft.world.entity.player.Player && SkyClient.tookOver());
 	}
 }

@@ -32,15 +32,17 @@ public final class SkyNet {
 	}
 
 	/** Guest -> server: the guest's Skyrim hit them (as proto::InputEvent kInHurt). */
-	public record Hurt(int kind, float skyrimDamage, int attackerFormId, int flags) implements CustomPacketPayload {
-		public static final Type<Hurt> TYPE = new Type<>(Identifier.fromNamespaceAndPath(SkyCraft.MOD_ID, "hurt"));
-		public static final StreamCodec<RegistryFriendlyByteBuf, Hurt> CODEC = StreamCodec.composite(
-			ByteBufCodecs.VAR_INT, Hurt::kind,
-			ByteBufCodecs.FLOAT, Hurt::skyrimDamage,
-			ByteBufCodecs.INT, Hurt::attackerFormId,
-			ByteBufCodecs.VAR_INT, Hurt::flags,
-			Hurt::new
-		);
+	public record Hurt(int kind, float skyrimDamage, int attackerFormId, int flags, boolean hasPosition, float x, float y, float z) implements CustomPacketPayload {
+		public static final Type<Hurt> TYPE = new Type<>(Identifier.fromNamespaceAndPath(SkyCraft.MOD_ID, "hurt_v2"));
+		public static final StreamCodec<RegistryFriendlyByteBuf, Hurt> CODEC = new StreamCodec<>() {
+			@Override public Hurt decode(RegistryFriendlyByteBuf b) {
+				return new Hurt(b.readVarInt(),b.readFloat(),b.readInt(),b.readVarInt(),b.readBoolean(),b.readFloat(),b.readFloat(),b.readFloat());
+			}
+			@Override public void encode(RegistryFriendlyByteBuf b,Hurt h) {
+				b.writeVarInt(h.kind);b.writeFloat(h.skyrimDamage);b.writeInt(h.attackerFormId);b.writeVarInt(h.flags);
+				b.writeBoolean(h.hasPosition);b.writeFloat(h.x);b.writeFloat(h.y);b.writeFloat(h.z);
+			}
+		};
 
 		@Override
 		public Type<? extends CustomPacketPayload> type() {
@@ -92,6 +94,7 @@ public final class SkyNet {
 	}
 
 	public static void init() {
+		DigSync.init();
 		PayloadTypeRegistry.clientboundPlay().register(TestSession.TYPE, TestSession.CODEC);
 		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			if (ServerPlayNetworking.canSend(handler.player, TestSession.TYPE))
@@ -115,7 +118,10 @@ public final class SkyNet {
 			ServerPlayer player = context.player();
 			// A hit's worth of damage, whatever the guest's client claims (friends only, but still).
 			float damage = Math.max(0.0F, Math.min(payload.skyrimDamage(), 10000.0F));
-			context.server().execute(() -> SkyCombat.hurtPlayer(player, payload.kind(), damage, payload.attackerFormId(), payload.flags()));
+			var position=payload.hasPosition() && Float.isFinite(payload.x()) && Float.isFinite(payload.y()) && Float.isFinite(payload.z())
+				? new net.minecraft.world.phys.Vec3(payload.x(),payload.y(),payload.z()) : null;
+			// A guest's FormID belongs to their Skyrim, never select a host NPC by coincidence.
+			context.server().execute(() -> SkyCombat.hurtPlayer(player, payload.kind(), damage, 0, payload.flags(), position));
 		});
 	}
 

@@ -147,7 +147,7 @@ namespace SkyCraftTests {
         }
     }
     static class Assessment {
-        public static bool SessionMatches(Dictionary<string,object> peer,string runId) {return Data.Str(peer,"runId")==runId && Data.Str(peer,"version")=="0.1.2-ys.network.5";}
+        public static bool SessionMatches(Dictionary<string,object> peer,string runId) {return Data.Str(peer,"runId")==runId && Data.Str(peer,"version")=="0.1.2-ys.network.6";}
         public static double Distance(Dictionary<string,object> a,Dictionary<string,object> b) {
             double x=Convert.ToDouble(a["x"])-Convert.ToDouble(b["x"]),y=Convert.ToDouble(a["y"])-Convert.ToDouble(b["y"]),z=Convert.ToDouble(a["z"])-Convert.ToDouble(b["z"]);
             return Math.Sqrt(x*x+y*y+z*z);
@@ -155,13 +155,13 @@ namespace SkyCraftTests {
     }
     sealed class Invitation {
         public string RunId; public List<Dictionary<string,object>> Addresses; public DateTime Expires; public string Authentication="ONLINE";
-        public string Encode() { return "SCY2:"+Convert.ToBase64String(Encoding.UTF8.GetBytes(Data.Json(Data.Obj("schema",2,"version","0.1.2-ys.network.5","runId",RunId,"expiresUtc",Expires.ToString("o"),"addresses",Addresses,"authentication",Authentication)))); }
+        public string Encode() { return "SCY2:"+Convert.ToBase64String(Encoding.UTF8.GetBytes(Data.Json(Data.Obj("schema",2,"version","0.1.2-ys.network.6","runId",RunId,"expiresUtc",Expires.ToString("o"),"addresses",Addresses,"authentication",Authentication)))); }
         public static Invitation Decode(string text) {
             if(text.Length>12000 || !text.StartsWith("SCY2:")) throw new ArgumentException("Вставьте весь код хоста, начиная с SCY2:.");
             var d=Data.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(text.Substring(5).Trim())));
             string id=Data.Str(d,"runId");
             DateTime expiry=DateTime.Parse(Data.Str(d,"expiresUtc")).ToUniversalTime();
-            if(Data.Int(d,"schema")!=2 || Data.Str(d,"version")!="0.1.2-ys.network.5" || !Regex.IsMatch(id,"^[A-Za-z0-9_-]{1,64}$") || expiry<DateTime.UtcNow || expiry>DateTime.UtcNow.AddMinutes(31)) throw new ArgumentException("Код повреждён или устарел. Попросите новый код хоста.");
+            if(Data.Int(d,"schema")!=2 || Data.Str(d,"version")!="0.1.2-ys.network.6" || !Regex.IsMatch(id,"^[A-Za-z0-9_-]{1,64}$") || expiry<DateTime.UtcNow || expiry>DateTime.UtcNow.AddMinutes(31)) throw new ArgumentException("Код повреждён или устарел. Попросите новый код хоста.");
             string authentication=Data.Str(d,"authentication");
             if(authentication!="ONLINE" && authentication!="OFFLINE") throw new ArgumentException("В коде нет корректного режима входа. Попросите новый код хоста.");
             var rows=new List<Dictionary<string,object>>();
@@ -202,7 +202,7 @@ namespace SkyCraftTests {
                 }
                 await Task.Delay(250,token);
             }
-            throw new TimeoutException("Мод не ответил. Нужен SkyCraft network.5; игра должна работать, а сохранение — быть загружено.");
+            throw new TimeoutException("Мод не ответил. Нужен SkyCraft network.6; игра должна работать, а сохранение — быть загружено.");
         }
         public void Dispose() { disposed=true; heartbeat.Dispose(); try { var lease=Data.Read(Path.Combine(dir,"lease.json")); if(Data.Str(lease,"session")==session) File.Delete(Path.Combine(dir,"lease.json")); } catch { } }
     }
@@ -223,6 +223,8 @@ namespace SkyCraftTests {
         readonly CheckBox publicIp=new CheckBox {Text="Найти внешний IP через HTTPS ipify",Checked=true,AutoSize=true};
         readonly CheckBox offlineProfiles=new CheckBox {Text="Хост: автономные профили (частная LAN/Radmin)",Checked=false,AutoSize=true};
         readonly Button start=new Button {Text="Начать автотест",AutoSize=true};
+        readonly Button gameplay=new Button {Text="Игровой тест до остановки",AutoSize=true};
+        readonly Dictionary<string,ComboBox> gameplayChecks=new Dictionary<string,ComboBox>();
         readonly Button stop=new Button {Text="Остановить и собрать отчёт",AutoSize=true,Enabled=false};
         readonly Button copy=new Button {Text="Копировать код хоста",AutoSize=true};
         readonly Button update=new Button {Text="Обновить мод",AutoSize=true};
@@ -231,7 +233,7 @@ namespace SkyCraftTests {
         readonly string package=AppDomain.CurrentDomain.BaseDirectory;
         string reportRoot,runId,gamePath,skyrimPath,modsPath,target="",roleName,networkLabel,selectedMode,proxyText,traceName="",hostAuthentication="ONLINE"; int networkKind; int pendingJoinRequest; int worldWaitNumber;
         Bridge bridge; CancellationTokenSource cancel; readonly List<Dictionary<string,object>> checks=new List<Dictionary<string,object>>();
-        bool working,closing; DateTime started; string finalArchive; string[] routeTargets=new string[0];
+        bool working,closing,gameplayRun; DateTime started; string finalArchive; string[] routeTargets=new string[0];
         public HelperForm(string initialRole) {
             Text="SkyCraft — автоматические тесты"; Size=new Size(1020,860); MinimumSize=new Size(950,820); Font=new Font("Segoe UI",10);
             role.Items.AddRange(new object[]{"Хост","Клиент","Без друга"}); role.SelectedIndex=initialRole=="client"?1:initialRole=="solo"?2:0;
@@ -252,18 +254,25 @@ namespace SkyCraftTests {
             var options=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill};
             foreach(var pair in new[]{new {Name="Роль:",Control=(Control)role},new {Name="Сеть:",Control=(Control)network},new {Name="Транспорт:",Control=(Control)mode},new {Name="Прокси:",Control=(Control)proxy}}) {options.Controls.Add(new Label {Text=pair.Name,AutoSize=true}); options.Controls.Add(pair.Control);} root.Controls.Add(options,0,3);
             var conditionRow=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill}; conditionRow.Controls.Add(publicIp); conditionRow.Controls.Add(offlineProfiles); conditionRow.Controls.Add(new Label {Text="Условия / имя теста:",AutoSize=true}); conditionRow.Controls.Add(conditions); root.Controls.Add(conditionRow,0,4); root.Controls.Add(invite,0,5);
-            var actions=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill}; foreach(var control in new Control[]{start,stop,copy,update,open}) actions.Controls.Add(control); root.Controls.Add(actions,0,6);
+            var actions=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill}; foreach(var control in new Control[]{start,gameplay,stop,copy,update,open}) actions.Controls.Add(control); root.Controls.Add(actions,0,6);
             var visual=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill};
             foreach(var pair in new[]{new {Name="HUD",Control=hud},new {Name="Движение",Control=movement},new {Name="Блоки у обоих",Control=blocks}}) {
-                visual.Controls.Add(new Label {Text=pair.Name,AutoSize=true}); pair.Control.Items.AddRange(new object[]{"Не проверено","Работает","Ошибка"});pair.Control.SelectedIndex=0;visual.Controls.Add(pair.Control);
+                var group=new FlowLayoutPanel {AutoSize=true,WrapContents=false,Margin=new Padding(0)};
+                group.Controls.Add(new Label {Text=pair.Name,AutoSize=true}); pair.Control.Items.AddRange(new object[]{"Не проверено","Работает","Ошибка"});pair.Control.SelectedIndex=0;group.Controls.Add(pair.Control);visual.Controls.Add(group);
             }
+            foreach(var pair in new[]{new {Id="DIG_SHARED",Name="Разрушение у обоих"},new {Id="DOOR",Name="Проход двери"},new {Id="INPUT",Name="Клавиши"},new {Id="HOST_FOCUS",Name="Alt+Tab хоста"},new {Id="COMBAT",Name="Щит/урон"},new {Id="KNOCKDOWN",Name="Сбит с ног"}}) {
+                var selector=new ComboBox {DropDownStyle=ComboBoxStyle.DropDownList,Width=115};selector.Items.AddRange(new object[]{"Не проверено","Работает","Ошибка"});selector.SelectedIndex=0;
+                gameplayChecks.Add(pair.Id,selector);var group=new FlowLayoutPanel {AutoSize=true,WrapContents=false,Margin=new Padding(0)};
+                group.Controls.Add(new Label {Text=pair.Name,AutoSize=true});group.Controls.Add(selector);visual.Controls.Add(group);
+            }
+            var gameplayHelp=new Button {Text="Игровая инструкция",AutoSize=true};gameplayHelp.Click+=(s,e)=>{string guide=Path.Combine(package,"ИГРОВЫЕ-ПРОВЕРКИ.html");if(File.Exists(guide))Process.Start(guide);};visual.Controls.Add(gameplayHelp);
             var help=new Button {Text="Инструкция",AutoSize=true};help.Click+=(sender,e)=>{string file=Path.Combine(package,"АВТОТЕСТЫ.html");if(File.Exists(file))Process.Start(file);};visual.Controls.Add(help);root.Controls.Add(visual,0,7);
             root.Controls.Add(output,0,8); root.Controls.Add(status,0,9);
             root.Controls.Add(new Label {Text="Отчёт остаётся на ПК. Код содержит адреса хоста. Внешний IP при VPN может принадлежать VPN; доступность проверяет клиент.",AutoSize=true},0,10);
             Controls.Add(root);
             foreach(string p in Discovery.Games()) game.Items.Add(p); if(game.Items.Count>0) game.SelectedIndex=0; skyrim.Text=Discovery.Skyrim(); mods.Text=Directory.Exists(Path.Combine(skyrim.Text,"Mods"))?Path.Combine(skyrim.Text,"Mods"):"";
             try {var prefs=Data.Read(Path.Combine(Discovery.SettingsDir,"preferences.json")); if(Directory.Exists(Data.Str(prefs,"mods")))mods.Text=Data.Str(prefs,"mods");}catch{}
-            start.Click+=async(s,e)=>await Run(); stop.Click+=(s,e)=>{if(cancel!=null) cancel.Cancel();}; copy.Click+=(s,e)=>{if(invite.Text.StartsWith("SCY2:")) { Clipboard.SetText(invite.Text); Log("Код скопирован. Передайте его другу любым привычным способом."); }};
+            start.Click+=async(s,e)=>await Run(); gameplay.Click+=async(s,e)=>await Run(true); stop.Click+=(s,e)=>{if(cancel!=null) cancel.Cancel();}; copy.Click+=(s,e)=>{if(invite.Text.StartsWith("SCY2:")) { Clipboard.SetText(invite.Text); Log("Код скопирован. Передайте его другу любым привычным способом."); }};
             open.Click+=(s,e)=>{string path=reportRoot==null?Path.Combine(Discovery.SettingsDir,"reports"):Path.GetDirectoryName(reportRoot); Directory.CreateDirectory(path); Process.Start(path);};
             update.Click+=async(s,e)=>await UpdateMod();
             FormClosing+=(s,e)=>{if(working) {e.Cancel=true; closing=true; cancel.Cancel(); Log("Завершаю тест и собираю отчёт перед закрытием…");}};
@@ -287,21 +296,22 @@ namespace SkyCraftTests {
             } finally {if(reportRoot!=null)Data.Atomic(Path.Combine(reportRoot,"WORLD_WAIT_"+waitNumber+".json"),Data.Obj("world",world,"elapsedSeconds",watch.Elapsed.TotalSeconds,"samples",samples));}
         }
         async Task Ready(CancellationToken token) {
-            Log("Ожидаю SkyCraft network.5 и загруженное тестовое сохранение (до 10 минут)…");
+            Log("Ожидаю SkyCraft network.6 и загруженное тестовое сохранение (до 10 минут)…");
             var watch=Stopwatch.StartNew();
             while(watch.Elapsed.TotalSeconds<600) {
                 token.ThrowIfCancellationRequested(); var state=bridge.State();
                 if(Data.Str(state,"world")!="none" && state.Count>0 && Data.Bool(state,"skyrimReady") && Data.Bool(state,"positionReady")) return;
                 await Task.Delay(500,token);
             }
-            throw new TimeoutException("Нет связи с Skyrim. Проверьте версию network.5, загрузку тестового сохранения и папку Minecraft.");
+            throw new TimeoutException("Нет связи с Skyrim. Проверьте версию network.6, загрузку тестового сохранения и папку Minecraft.");
         }
-        async Task Run() {
+        async Task Run(bool gameplayMode=false) {
             if(working) return;
+            gameplayRun=gameplayMode;
             try {
                 gamePath=Path.GetFullPath(game.Text.Trim().Trim('"'));
                 if(!Discovery.ValidGame(gamePath)) throw new ArgumentException("Не найдена папка Minecraft со SkyCraft JAR. В Prism: экземпляр → Папка Minecraft.");
-                if(Discovery.SkyVersion(gamePath)!="0.1.2-ys.network.5") throw new IOException("Для помощника нужен SkyCraft network.5. Закройте Skyrim и Minecraft, нажмите «Обновить мод», затем запустите игру снова.");
+                if(Discovery.SkyVersion(gamePath)!="0.1.2-ys.network.6") throw new IOException("Для помощника нужен SkyCraft network.6. Закройте Skyrim и Minecraft, нажмите «Обновить мод», затем запустите игру снова.");
                 skyrimPath=skyrim.Text.Trim().Trim('"'); modsPath=Directory.Exists(mods.Text.Trim())?Path.GetFullPath(mods.Text.Trim()):"NOT_FOUND";
                 roleName=role.SelectedIndex==0?"host":"client"; networkKind=network.SelectedIndex; networkLabel=role.SelectedIndex==2?"Loopback":networkKind>0?"LAN":"Internet";
                 selectedMode=mode.SelectedIndex==0?"CURRENT":Convert.ToString(mode.SelectedItem); proxyText=proxy.Text.Trim();
@@ -313,7 +323,8 @@ namespace SkyCraftTests {
                 started=DateTime.UtcNow; checks.Clear(); pendingJoinRequest=0; worldWaitNumber=0; target=""; hud.SelectedIndex=movement.SelectedIndex=blocks.SelectedIndex=0; traceName=""; finalArchive=null;
                 reportRoot=Path.Combine(Discovery.SettingsDir,"reports",runId+"-"+roleName+"-"+Guid.NewGuid().ToString("N").Substring(0,6)); Directory.CreateDirectory(reportRoot);
                 Data.Atomic(Path.Combine(Discovery.SettingsDir,"preferences.json"),Data.Obj("game",gamePath,"skyrim",skyrimPath,"mods",modsPath));
-                working=true; start.Enabled=false; stop.Enabled=true; update.Enabled=false;
+                working=true; start.Enabled=false; gameplay.Enabled=false; stop.Enabled=true; update.Enabled=false;
+                foreach(var selector in gameplayChecks.Values)selector.SelectedIndex=0;
                 foreach(Control c in new Control[]{game,role,network,mode,proxy,skyrim,mods,conditions,publicIp,offlineProfiles}) c.Enabled=false;
                 invite.ReadOnly=true;
                 cancel=new CancellationTokenSource(); bridge=new Bridge(gamePath); var token=cancel.Token;
@@ -331,7 +342,8 @@ namespace SkyCraftTests {
                 Check("TRANSPORT_SELF_CHECK",Data.Bool(Data.Sub(transport,"detail"),"success")?"PASS":"FAIL",Data.Json(Data.Sub(transport,"detail")));
                 if(!Data.Bool(Data.Sub(transport,"detail"),"success")) throw new IOException("TRANSPORT_SELF_CHECK_FAILED: локальные проверки транспорта не прошли; дальнейший сетевой тест остановлен.");
                 if(role.SelectedIndex!=0) Log("Alt+Tab в Skyrim и не двигайтесь до входа/возврата. Помощник продолжает работу в фоне; состояние клавиш войдёт в отчёт.");
-                if(role.SelectedIndex==2) await Solo(token);
+                if(role.SelectedIndex==2 && gameplayRun) await GameplayMonitor(token);
+                else if(role.SelectedIndex==2) await Solo(token);
                 else if(role.SelectedIndex==0) await Host(addresses,observed,token);
                 else await Client(received,token);
             } catch(OperationCanceledException) { Check("RUN","PARTIAL","Остановлено пользователем; завершённые проверки сохранены."); }
@@ -340,6 +352,7 @@ namespace SkyCraftTests {
                 if(working && bridge!=null) {Data.Atomic(Path.Combine(reportRoot,"last-state.json"),bridge.State());
                     foreach(var pair in new[]{new {Id="VISUAL_HUD",Control=hud},new {Id="VISUAL_MOVEMENT",Control=movement},new {Id="VISUAL_BLOCKS",Control=blocks}})
                         Check(pair.Id,pair.Control.SelectedIndex==1?"PASS":pair.Control.SelectedIndex==2?"FAIL":"NOT_RUN","Наблюдение пользователя: "+Convert.ToString(pair.Control.SelectedItem));
+                    foreach(var pair in gameplayChecks)Check(pair.Key,pair.Value.SelectedIndex==1?"PASS":pair.Value.SelectedIndex==2?"FAIL":"NOT_RUN","Наблюдение пользователя: "+Convert.ToString(pair.Value.SelectedItem));
                     if(!checks.Any(c=>Data.Str(c,"id")=="RUN")) {
                         bool failed=checks.Any(c=>Data.Str(c,"result")=="FAIL" && Data.Str(c,"id")!="CANDIDATE_TCP" && Data.Str(c,"id")!="CANDIDATE_JOIN");
                         bool partial=roleName=="host" && role.SelectedIndex!=2 && !checks.Any(c=>Data.Str(c,"id")=="TWO_PLAYERS" && Data.Str(c,"result")=="PASS");
@@ -349,7 +362,7 @@ namespace SkyCraftTests {
                 }
                 if(bridge!=null) { try { if(bridge.State().Count>0) {await bridge.Send("stop",null,CancellationToken.None); await Task.Delay(2200);} } catch { } bridge.Dispose(); bridge=null; }
                 if(working) { try { await Report(); } catch(Exception e) { Log("Сбор отчёта неполный: "+e.Message+". Данные остались в "+reportRoot); } }
-                working=false; start.Enabled=true; stop.Enabled=false; update.Enabled=true; if(cancel!=null) cancel.Dispose();
+                working=false; start.Enabled=true; gameplay.Enabled=true; stop.Enabled=false; update.Enabled=true; if(cancel!=null) cancel.Dispose();
                 foreach(Control c in new Control[]{game,role,network,mode,proxy,skyrim,mods,conditions,publicIp}) c.Enabled=true;
                 invite.ReadOnly=false; proxy.Enabled=mode.SelectedIndex>=2;
                 offlineProfiles.Enabled=role.SelectedIndex==0;
@@ -380,6 +393,7 @@ namespace SkyCraftTests {
             }
             if(!found) {Check("TWO_PLAYERS","NOT_RUN","Клиент не появился за 20 минут.");return;}
             Check("TWO_PLAYERS","PASS","Сервер сообщил не менее двух игроков.");
+            if(gameplayRun){await GameplayMonitor(token);return;}
             await Observe(240,"HOST_SESSION",true,token);
         }
         async Task Join(string endpoint,CancellationToken token) {
@@ -404,13 +418,13 @@ namespace SkyCraftTests {
                 token.ThrowIfCancellationRequested(); var peer=Data.Sub(bridge.State(),"peerSession");
                 if(peer.Count>0) {
                     bool matches=Assessment.SessionMatches(peer,runId);
-                    Check("PEER_SESSION",matches?"PASS":"FAIL","Ожидался "+runId+" / network.5; сервер сообщил "+Data.Json(peer));
+                    Check("PEER_SESSION",matches?"PASS":"FAIL","Ожидался "+runId+" / network.6; сервер сообщил "+Data.Json(peer));
                     if(!matches)throw new IOException("SESSION_MISMATCH: код принадлежит другому или уже завершённому тесту. Хост должен начать новый прогон и передать новый код.");return;
                 }
                 await Task.Delay(250,token);
             }
-            Check("PEER_SESSION","FAIL","Сервер не прислал метаданные SkyCraft network.5.");
-            throw new IOException("PEER_VERSION_UNKNOWN: проверьте network.5 на хосте и запущенный помощник.");
+            Check("PEER_SESSION","FAIL","Сервер не прислал метаданные SkyCraft network.6.");
+            throw new IOException("PEER_VERSION_UNKNOWN: проверьте network.6 на хосте и запущенный помощник.");
         }
         async Task Snapshot(string stage) {
             string plan=Path.Combine(reportRoot,"environment-"+stage+"-plan.json");
@@ -443,6 +457,7 @@ namespace SkyCraftTests {
             }
             if(target=="") throw new IOException(tcpReady>0?"GAME_LOGIN_FAILED: TCP доступен, но вход Minecraft не состоялся. Причины и фаза сохранены в JSONL и last-state.json; проброс порта сам по себе это не исправит.":"TARGET_TCP_UNAVAILABLE: выбранные адреса не ответили. Маршруты, запущенные фильтры и результаты каждого адреса записаны в отчёт. Внешний IP VPN не гарантирует входящий доступ.");
             Check("REMOTE_JOIN","PASS","Minecraft вошёл на "+target+".");
+            if(gameplayRun){await GameplayMonitor(token);return;}
             await Observe(180,"CLIENT_SESSION",false,token);
             var departure=bridge.State(); await bridge.Send("leave",null,token); await WaitWorld("local",90,token);
             await Recovery(departure,"LEAVE_RECOVERY",token);
@@ -506,12 +521,26 @@ namespace SkyCraftTests {
                 Check(name,"PASS",seconds+" с в мире со связью Skyrim; два игрока видны в "+samples.Count(item=>Data.Int(item,"players")>=2)+"/"+samples.Count+" отсчётах. HUD и блоки отмечаются пользователем отдельно.");
             } finally {Data.Atomic(Path.Combine(reportRoot,name+".json"),samples);}
         }
+        async Task GameplayMonitor(CancellationToken token) {
+            Log("Игровой тест: следуйте «Игровой инструкции». Автоматического выхода/переподключения не будет. В конце отметьте результаты и нажмите «Остановить и собрать отчёт».");
+            var watch=Stopwatch.StartNew();var samples=new List<Dictionary<string,object>>();int missing=0;
+            try {
+                while(watch.Elapsed.TotalMinutes<30) {
+                    token.ThrowIfCancellationRequested();var state=bridge.State();samples.Add(state);
+                    missing=state.Count==0||!Data.Bool(state,"skyrimLinked")?missing+1:0;
+                    if(missing>=8)throw new IOException("Связь с Skyrim отсутствует 8 секунд. Игровые логи и свежий дамп будут собраны автоматически.");
+                    status.Text="Игровая проверка: "+(int)watch.Elapsed.TotalSeconds+" с; игроков "+Data.Int(state,"players")+". Отметьте результаты; затем «Остановить и собрать отчёт».";
+                    await Task.Delay(1000,token);
+                }
+                Check("GAMEPLAY_WINDOW","PARTIAL","Достигнут предел 30 минут; наблюдения сохранены.");
+            }finally{Data.Atomic(Path.Combine(reportRoot,"GAMEPLAY_SESSION.json"),samples);}
+        }
         async Task Report() {
-            Log("Собираю Windows, версии, JSONL и итоговый ZIP…");
+            Log("Собираю Windows, версии, JSONL, игровые логи и свежий локальный дамп, если он появился…");
             Data.Atomic(Path.Combine(reportRoot,"automatic-results.json"),Data.Obj("schema",2,"runId",runId,"role",role.SelectedIndex==2?"solo":roleName,"overall",checks.Where(c=>Data.Str(c,"id")=="RUN").Select(c=>Data.Str(c,"result")).LastOrDefault(),"startedUtc",started.ToString("o"),"endedUtc",DateTime.UtcNow.ToString("o"),"checks",checks,"visualGameplay","See VISUAL_* checks; user observations","conditions",conditions.Text,"networkSelection",role.SelectedIndex==2?"Loopback":networkKind==2?"Virtual":networkKind==1?"Physical LAN":"Internet","transportRequested",selectedMode,"hostAuthentication",hostAuthentication,"source","Conditions are tester annotations; environment-before/after.json contain observed facts."));
             File.WriteAllText(Path.Combine(reportRoot,"ИТОГИ.txt"),String.Join(Environment.NewLine,checks.Select(c=>"["+Data.Str(c,"result")+"] "+Data.Str(c,"id")+": "+Data.Str(c,"note")))+Environment.NewLine,Encoding.UTF8);
             string plan=Path.Combine(reportRoot,"collector-plan.json");
-            Data.Atomic(plan,Data.Obj("action","collect","game",gamePath,"skyrim",skyrimPath==""?"NOT_FOUND":skyrimPath,"mods",modsPath,"output",reportRoot,"runId",runId,"role",roleName,"network",networkLabel,"target",target,"traceFile",traceName));
+            Data.Atomic(plan,Data.Obj("action","collect","game",gamePath,"skyrim",skyrimPath==""?"NOT_FOUND":skyrimPath,"mods",modsPath,"output",reportRoot,"runId",runId,"role",roleName,"network",networkLabel,"target",target,"traceFile",traceName,"gameplay",true,"startedUtc",started.ToString("o")));
             await Worker(plan);
             finalArchive=reportRoot+".zip"; ZipFile.CreateFromDirectory(reportRoot,finalArchive);
             Log("Готово: "+finalArchive+". Кнопка «Открыть отчёты» покажет папку.");
@@ -520,9 +549,17 @@ namespace SkyCraftTests {
             try {
                 if(Process.GetProcessesByName("SkyrimSE").Length>0) throw new IOException("Закройте Skyrim обычным способом перед обновлением.");
                 if(!Discovery.ValidGame(game.Text)) throw new IOException("Выберите папку Minecraft со SkyCraft.");
+                string nativeDll="";
+                var native=Data.Sub(Data.Read(Path.Combine(package,"package-manifest.json")),"nativeDll");
+                if(Data.Bool(native,"changed")) {
+                    MessageBox.Show(this,"Нужно обновить также Skyrim-часть. В MO2: правой кнопкой по включённому SkyCraft слева → Открыть в проводнике → SKSE → Plugins. В следующем окне выберите существующую SkyCraft.dll из этой папки.","Обновление SkyCraft.dll",MessageBoxButtons.OK,MessageBoxIcon.Information);
+                    using(var dialog=new OpenFileDialog {Title="Выберите установленную SkyCraft.dll из MO2 → SkyCraft → SKSE → Plugins",Filter="SkyCraft.dll|SkyCraft.dll",CheckFileExists=true}) {
+                        if(dialog.ShowDialog(this)!=DialogResult.OK)return;nativeDll=dialog.FileName;
+                    }
+                }
                 update.Enabled=false; start.Enabled=false;
                 Directory.CreateDirectory(Discovery.SettingsDir); string plan=Path.Combine(Discovery.SettingsDir,"update-plan.json");
-                Data.Atomic(plan,Data.Obj("action","install","game",Path.GetFullPath(game.Text)));
+                Data.Atomic(plan,Data.Obj("action","install","game",Path.GetFullPath(game.Text),"nativeDll",nativeDll));
                 await Worker(plan); Log("Обновление установлено с резервной копией. Запустите SkyCraft через MO2/SKSE, затем автотест.");
             } catch(Exception e) {Log(e.Message);} finally {update.Enabled=true; start.Enabled=true;}
         }
@@ -598,7 +635,7 @@ namespace SkyCraftTests {
                 if(Assessment.Distance(away,atOrigin)<380 || Assessment.Distance(atOrigin,atOrigin)!=0)throw new Exception("Position reset classification");checks.Add("POSITION_RESET_DETECTED_LEGITIMATE_ORIGIN_ALLOWED PASS");
                 var packet=Data.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(copy.Encode().Substring(5))));packet["version"]="0.1.2-ys.network.3";
                 rejected=false;try{Invitation.Decode("SCY2:"+Convert.ToBase64String(Encoding.UTF8.GetBytes(Data.Json(packet))));}catch{rejected=true;}if(!rejected)throw new Exception("Old version invite");checks.Add("OLD_VERSION_INVITATION_REJECTED PASS");
-                if(!Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.5"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","OLD","version","0.1.2-ys.network.5"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.3"),"TEST"))throw new Exception("Peer session matching");checks.Add("PEER_SESSION_AND_VERSION_MATCHING PASS");
+                if(!Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.6"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","OLD","version","0.1.2-ys.network.6"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.3"),"TEST"))throw new Exception("Peer session matching");checks.Add("PEER_SESSION_AND_VERSION_MATCHING PASS");
                 Data.Atomic(path,Data.Obj("result","PASS","checks",checks));return 0;
             } catch(Exception e) {Data.Atomic(path,Data.Obj("result","FAIL","checks",checks,"error",e.ToString()));return 1;}
         }

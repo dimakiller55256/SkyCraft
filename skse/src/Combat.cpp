@@ -32,6 +32,7 @@ namespace skycraft
 		PendingHurt dot;  // accumulated magic / unattributed damage
 
 		bool  essentialSet = false;
+		bool  essentialOriginal = false;
 		bool  healthPrimed = false;
 		float diagTimer = 5.0f;
 		bool  engaged = false;
@@ -115,8 +116,9 @@ namespace skycraft
 			}
 			auto& flags = a_player->GetActorRuntimeData().boolFlags;
 			if (a_on) {
+				essentialOriginal = flags.any(RE::Actor::BOOL_FLAGS::kEssential);
 				flags.set(RE::Actor::BOOL_FLAGS::kEssential);
-			} else {
+			} else if (!essentialOriginal) {
 				flags.reset(RE::Actor::BOOL_FLAGS::kEssential);
 			}
 			essentialSet = a_on;
@@ -849,10 +851,12 @@ namespace skycraft
 		{
 			auto& link = Link::Get();
 			if (!a_puppeting) {
-				if (essentialSet) {
-					SetEssential(a_player, false);
-				}
-				healthPrimed = false;
+				// Knockdown temporarily hands animation/physics to Skyrim. It must not revoke
+				// Minecraft's health ownership or drop the essential guard during that transition.
+				const bool protect = link.McAlive() && State().mcInWorld && !a_player->IsDead();
+				SetEssential(a_player, protect);
+				if (protect) BridgePlayerDamage(a_player, a_delta);
+				else healthPrimed = false;
 				engaged = false;
 				// Still drain Minecraft's events so stale hits don't land when control resumes.
 				proto::McEvent ev;

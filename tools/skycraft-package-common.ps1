@@ -1,5 +1,12 @@
 ﻿# Shared by the friend installer and read-only installation check.
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+function Get-SkyCraftFileHash([string]$LiteralPath, [ValidateSet('SHA256')][string]$Algorithm = 'SHA256') {
+    # Avoid Windows PowerShell module auto-loading differences under alternate launchers.
+    $stream = New-Object IO.FileStream($LiteralPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try { [pscustomobject]@{Hash=([BitConverter]::ToString($hasher.ComputeHash($stream))).Replace('-',''); Path=$LiteralPath} }
+    finally { $hasher.Dispose(); $stream.Dispose() }
+}
 function Read-FabricMetadata([string]$path) {
     $archive = [IO.Compression.ZipFile]::OpenRead($path)
     try {

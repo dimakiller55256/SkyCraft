@@ -1,4 +1,4 @@
-"""Package verified upstream native files plus YS Java mod and portable test tools.
+"""Package verified upstream resources, optional built native DLL, YS Java mod and test tools.
 
 Uses the pristine upstream release, never an installed Prism/profile/game folder.
 Download SkyCraft-0.1.2.zip from its official release to the cache first.
@@ -13,7 +13,7 @@ import subprocess
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_REVISION = 5
+PACKAGE_REVISION = 6
 UPSTREAM_SHA256 = '1133ecde384d70d5261cbc9ba149bc7b544e1653b78846a1623b56241bb392c3'
 NATIVE_SHA256 = '72b0d231f4632cf2268514eece90e9b7adaa2b59c648fcf14aaf55a6513eefa3'
 API_SHA512 = 'ed6b2586d6fde11fde8472f5a527c51e99b67026e46f94d4bfd85e7e28ce5ee299173ee16ad576ceb51f39f98d30a811086a6deb1a86a524859cc16e12da109d'
@@ -35,10 +35,11 @@ def zip_bytes(entries):
 def mod_metadata(data):
     with zipfile.ZipFile(io.BytesIO(data)) as z: return json.loads(z.read('fabric.mod.json'))
 
-def build(output):
+def build(output, native_dll=None):
     properties=(ROOT/'fabric/gradle.properties').read_text()
     version=re.search(r'^version=(.+)$',properties,re.M).group(1).strip()
     if not re.fullmatch(r'[A-Za-z0-9._-]+',version): raise ValueError('Invalid version')
+    if version=='0.1.2-ys.network.6' and native_dll is None:raise ValueError('network.6 requires the built native DLL; pass --native-dll')
     upstream=ROOT/'.tools/friend-package/cache/SkyCraft-0.1.2.zip'
     data=upstream.read_bytes()
     if sha(data)!=UPSTREAM_SHA256: raise ValueError('Official upstream ZIP checksum mismatch')
@@ -56,13 +57,16 @@ def build(output):
                 if any(p.lower() in ('accounts.json','saves','logs','config') for p in PurePosixPath(name).parts): raise ValueError('User data found in upstream bundle')
                 if name.startswith(MODS_PREFIX) and Path(name).name.startswith(('skycraft-','e4mc-')):continue
                 bundle_entries[name]=bundle.read(name)
+    if native_dll is not None:
+        dll=native_dll.read_bytes()
+        if len(dll)<1048576 or dll[:2]!=b'MZ':raise ValueError('Invalid built native DLL')
     api_name='fabric-api-0.161.0+26.3.jar'
     api=bundle_entries[MODS_PREFIX+api_name]
     if hashlib.sha512(api).hexdigest()!=API_SHA512: raise ValueError('Fabric API checksum mismatch')
     for name in ('Prism/instances/SkyCraft/instance.cfg','Prism/instances/SkyCraft/mmc-pack.json','defaults/prismlauncher.cfg'):
         bundle_entries[name]=(ROOT/'tools/minecraft-bundle'/name).read_bytes()
     bundle_entries[MODS_PREFIX+jar_name]=jar
-    bundle_entries['bundle-version.txt']=f'SkyCraft YS {version}, upstream native 0.1.2, Prism 11.1.1, {api_name}; no e4mc'.encode()
+    bundle_entries['bundle-version.txt']=f'SkyCraft YS {version}, native {version if native_dll else "upstream 0.1.2"}, Prism 11.1.1, {api_name}; no e4mc'.encode()
     native_entries={
         'SKSE/Plugins/SkyCraft.dll':dll,
         'SKSE/Plugins/SkyCraft.ini':(ROOT/'skse/SkyCraft.ini').read_bytes(),
@@ -80,16 +84,17 @@ def build(output):
     })
     manifest={
         'schema':1,'version':version,'packageRevision':PACKAGE_REVISION,
-        'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+        'sourceCommit':subprocess.check_output(['git','-c',f'safe.directory={ROOT}','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
         'upstream':{'url':'https://github.com/chasmlol/SkyCraft/releases/tag/v0.1.2','zipSha256':UPSTREAM_SHA256},
         'fabricJar':{'file':jar_name,'sha256':sha(jar)},
-        'nativeDll':{'version':'0.1.2','sha256':sha(dll),'changed':False},
+        'nativeDll':{'version':version if native_dll else '0.1.2','file':'native/SkyCraft.dll','sha256':sha(dll),'changed':native_dll is not None,'upstreamSha256':NATIVE_SHA256},
         'mo2Archive':{'file':mod_name,'sha256':sha(mod_zip)},
         'prismInstance':{'file':instance_name,'sha256':sha(instance_zip)},
         'requirements':{'skyrimRuntime':'1.7.104.0','skse':'2.3.1','skseRuntimeDll':'skse64_1_7_104.dll','addressLibrary':'versionlib-1-7-104-0.bin','minecraft':'26.3','fabricLoader':'0.19.5','fabricApi':'0.161.0+26.3','java':25},
-        'verification':'Native DLL matches the locally tested upstream DLL. Remote PC and real two-player gameplay still require the included acceptance tests.'
+        'verification':'Built Java/native changes. Two isolated Minecraft clients tested LAN GUI, PLAY and dig replication/reconnect. Native Skyrim doors/knockdown and gameplay between PCs require the included acceptance tests.' if native_dll else 'Upstream native DLL verified by hash; gameplay acceptance remains required.'
     }
     entries={jar_name:jar,mod_name:mod_zip,instance_name:instance_zip,'package-manifest.json':(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode(),'LICENSE.txt':(ROOT/'LICENSE').read_bytes(),'THIRD-PARTY-NOTICES.md':(ROOT/'THIRD-PARTY-NOTICES.md').read_bytes()}
+    if native_dll:entries['native/SkyCraft.dll']=dll
     docs=['YS-FRIEND.md','YS-TESTING.md','YS-SOLO.md','YS-AUTOTEST.md','YS-NETWORK.md','YS-STARTUP.md','testing/SkyCraft-Network-Tests.xlsx','testing/scenarios.csv','testing/runs-template.csv','testing/conditions-template.csv','testing/detailed-steps.csv','testing/solo-steps.csv','testing/ИНСТРУКЦИЯ.html','testing/БЕЗ-ДРУГА.html']
     docs.extend(['YS-RETEST.md','YS-NETWORK-ENVIRONMENT.md','YS-NETWORK4-VALIDATION.md','testing/retest-steps.csv','testing/ПОВТОР.html'])
     for name in docs:entries['docs/'+name]=(ROOT/'docs'/name).read_bytes()
@@ -105,18 +110,21 @@ def build(output):
     for name in ('SkyCraft-Хост.exe','SkyCraft-Клиент.exe','SkyCraft-Без-друга.exe'):
         entries[name]=assistant
     entries['АВТОТЕСТЫ.html']=autotest_html()
+    entries['ИГРОВЫЕ-ПРОВЕРКИ.html']=guide_html('YS-GAMEPLAY.md')
+    entries['docs/YS-GAMEPLAY.md']=(ROOT/'docs/YS-GAMEPLAY.md').read_bytes()
+    entries['docs/YS-NETWORK6-VALIDATION.md']=(ROOT/'docs/YS-NETWORK6-VALIDATION.md').read_bytes()
     wrappers={'Установить обновление.cmd':'install-friend-update.ps1','Проверить сборку.cmd':'check-friend-installation.ps1','Собрать отчёт.cmd':'collect-friend-report.ps1','Адреса хоста.cmd':'show-host-addresses.ps1','Наблюдать запуск.cmd':'capture-skyrim-startup.ps1'}
     for label,script in wrappers.items():
         entries[label]=('@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\\'+script+'" %*\r\nif errorlevel 1 echo Failed. Read the message above.\r\npause\r\n').encode('ascii')
-    entries['НАЧАТЬ.txt']=('SkyCraft YS '+version+' — пакет для друга\r\n\r\nЕсли исходный SkyCraft 0.1.2 уже работает:\r\n1. Распаковать ВЕСЬ ZIP вне Skyrim. Закрыть обе игры.\r\n2. Установить обновление.cmd — путь через Prism → экземпляр → Папка Minecraft.\r\n3. Проверить сборку.cmd — Minecraft и папка SkyrimSE.exe.\r\n4. Обычный запуск SKSE/MO2: тестовое сохранение, HUD, движение, чат T.\r\n5. Собрать отчёт.cmd: режим 1 для запуска, режим 2 для сетевого прогона. ZIP остаются в reports.\r\n\r\nПолные инструкции с адресами/портами: docs/testing/ИНСТРУКЦИЯ.html (открыть браузером) или Excel в той же папке.\r\nКак установить с нуля: docs/YS-FRIEND.md. Вложенный MO2.zip и Prism-instance.zip — альтернативы, не надо устанавливать всё сразу.\r\nНе отправляйте source, свои аккаунты/сохранения или весь установленный Prism. В комплекте только чистые релизные файлы.\r\nРетранслятор/NAT traversal для CGNAT ещё не реализован. Для разных сетей нужен входящий TCP на одном ПК либо IPv6.\r\n').encode('utf-8-sig')
-    entries['НАЧАТЬ.txt'] += ('\r\nРедакция комплекта r5: нужен Java-мод network.5 на обоих ПК. Второй прогон: АВТОТЕСТЫ.html.\r\n'
-        'Минимум действий: АВТОТЕСТЫ.html -> SkyCraft-Хост.exe / SkyCraft-Клиент.exe / SkyCraft-Без-друга.exe.\r\n'
-        'Обновление мода кнопкой помощника при закрытых играх; затем MO2/SKSE и отдельное тестовое сохранение.\r\n'
-        'Роли, адреса, команды, ID прогона и отчёты автоматизированы. GUI не заменяет ручной проверки HUD/блоков.\r\n'
-        'Друг недоступен: двойной щелчок по ТЕСТЫ-БЕЗ-ДРУГА.html в этой папке. Сначала G1–G8, затем B0–B10.\r\n'
-        'Настройки join/network.*: папка Minecraft из Prism -> config -> skycraft.properties.\r\n'
-        'Пустой join записывается как join= без текста после =. Способ редактирования/сохранения: G2–G5.\r\n'
-        'Таблица содержит вкладки Файлы и команды, Без друга, Сбор отчёта.\r\n').encode('utf-8')
+    entries['НАЧАТЬ.txt']=(f'SkyCraft {version} — обновление ОБЕИХ частей\r\n'
+        '1. Распакуйте весь ZIP вне папки Skyrim.\r\n2. Откройте ИГРОВЫЕ-ПРОВЕРКИ.html: это актуальная инструкция к этой версии.\r\n'
+        '3. Закройте Skyrim/Minecraft. Запустите помощник и нажмите «Обновить мод».\r\n'
+        '4. При запросе выберите установленную SkyCraft.dll: MO2 -> правой кнопкой по SkyCraft -> Открыть в проводнике -> SKSE -> Plugins.\r\n'
+        '5. Запустите SKSE/MO2, загрузите тестовое сохранение. В помощнике нажмите «Игровой тест до остановки».\r\n'
+        '6. Без друга выберите роль «Без друга». С другом хост передаёт новый код, клиент вставляет его.\r\n'
+        '7. Следуйте ИГРОВЫЕ-ПРОВЕРКИ.html, отметьте результаты и нажмите «Остановить и собрать отчёт».\r\n'
+        'ZIP отчёта включает игровые логи и свежий дамп Skyrim при наличии; остаётся на ПК. Не публикуйте его на GitHub.\r\n'
+        'Оба игрока должны обновить JAR и DLL. Двери/вылет требуют проверки в настоящем Skyrim. STR и физическая экипировка Skyrim ещё не реализованы.\r\n').encode('utf-8-sig')
     hashes=''.join(sha(value)+'  '+name+'\n' for name,value in sorted(entries.items()))
     entries['SHA256.txt']=hashes.encode('utf-8')
     archive=output/f'SkyCraft-YS-friend-kit-{version}-r{PACKAGE_REVISION}.zip'
@@ -128,9 +136,12 @@ def build(output):
     return archive
 
 def autotest_html():
+    return guide_html('YS-RETEST.md')
+
+def guide_html(document):
     import html
     import re
-    source=(ROOT/'docs/YS-RETEST.md').read_text(encoding='utf-8')
+    source=(ROOT/'docs'/document).read_text(encoding='utf-8')
     # Standalone UTF-8 guide, readable offline without a Markdown editor.
     lines=[]
     for line in source.splitlines():
@@ -145,4 +156,7 @@ def autotest_html():
     return ('<!doctype html><html lang="ru"><meta charset="utf-8"><title>Автотесты SkyCraft</title><style>body{max-width:1000px;margin:40px auto;padding:0 24px;font:18px/1.55 system-ui;color:#213547}h1,h2{color:#17324d}code{background:#edf2f7;padding:2px 5px}</style>'+''.join(lines)+'</html>').encode('utf-8')
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output-directory',type=Path,default=ROOT/'dist');args=parser.parse_args();build(args.output_directory)
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output-directory',type=Path,default=ROOT/'dist')
+    parser.add_argument('--native-dll',type=Path,help='Built native DLL, never an installed game file')
+    args=parser.parse_args();build(args.output_directory,args.native_dll)

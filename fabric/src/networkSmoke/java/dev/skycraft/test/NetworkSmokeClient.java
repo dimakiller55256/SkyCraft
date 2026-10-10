@@ -28,6 +28,7 @@ public final class NetworkSmokeClient implements ClientModInitializer {
 	private long assistantDeadline;
 
 	@Override public void onInitializeClient() {
+		if (System.getProperty("skycraft.gameplaySmokeRole") != null) { new GameplaySmoke().initialize(); return; }
 		if (Boolean.getBoolean("skycraft.assistantWorldSmoke")) { new AssistantWorldSmoke().initialize(); return; }
 		deadline = System.nanoTime() + 90_000_000_000L;
 		ClientTickEvents.END_CLIENT_TICK.register(this::tick);

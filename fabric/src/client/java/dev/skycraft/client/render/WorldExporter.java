@@ -72,6 +72,7 @@ public final class WorldExporter {
 	private static final LongOpenHashSet DUG = new LongOpenHashSet(); // sections Skyrim holds dug cells for
 	private static final ByteBuffer LIGHTS = ByteBuffer.allocate(16 * 16 * 16 * 8).order(ByteOrder.LITTLE_ENDIAN);
 	private static int sentGeneration = Integer.MIN_VALUE;
+	private static int sentWorldId = Integer.MIN_VALUE, sentCollisionEpoch = Integer.MIN_VALUE;
 	private static int meshesSent;
 	private static ClientLevel sentLevel;
 	private static SkyAtlas atlas;
@@ -105,8 +106,12 @@ public final class WorldExporter {
 		if (level == null || minecraft.player == null || !SkyLink.active()) {
 			return;
 		}
-		if (sentGeneration != SkyLink.generation() || sentLevel != level || atlas == null || atlas.stale(minecraft)) {
+		var sky=dev.skycraft.client.SkyClient.sky();
+		if (sentGeneration != SkyLink.generation() || sentLevel != level || atlas == null || atlas.stale(minecraft)
+			|| sentWorldId!=sky.worldId || sentCollisionEpoch!=sky.collisionEpoch) {
 			resendEverything(minecraft, level);
+			sentWorldId=sky.worldId;sentCollisionEpoch=sky.collisionEpoch;
+			SkyCraft.LOG.info("SkyCraft: full world/dig resend: world {}, collision epoch {}", Integer.toHexString(sky.worldId),sky.collisionEpoch);
 		}
 		meshDirtySections(level);
 		// Animated textures (water, lava, fire, ...): the frame for this game tick.

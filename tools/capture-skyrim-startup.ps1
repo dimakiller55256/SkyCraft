@@ -63,7 +63,9 @@ if ($LoadSaveTest) {
     if ((Test-Path -LiteralPath $nativeLog) -and (Get-Item -LiteralPath $nativeLog).LastWriteTimeUtc -ge $begin) {
         $evidence.NativeLogFresh = $true
         # Read plain strings: Get-Content's provider properties make JSON huge.
-        $lines = @([IO.File]::ReadAllLines($nativeLog, [Text.Encoding]::UTF8))
+        # Parse our completed copy: the live spdlog file allows shared reads,
+        # but ReadAllLines uses a sharing mode incompatible with its writer.
+        $lines = @([IO.File]::ReadAllLines((Join-Path $reportPath 'SkyCraft.log'), [Text.Encoding]::UTF8))
         $evidence.BuildLine = @($lines | Where-Object { $_ -match 'SkyCraft .* loading \(runtime' } | Select-Object -First 1)
         $evidence.WorldChanges = @($lines | Where-Object { $_ -match 'world changed' })
         $evidence.PuppetOn = @($lines | Where-Object { $_ -match 'puppet on' })

@@ -62,7 +62,8 @@ if ($LoadSaveTest) {
     $nativeLog = Join-Path $skseDirectory 'SkyCraft.log'
     if ((Test-Path -LiteralPath $nativeLog) -and (Get-Item -LiteralPath $nativeLog).LastWriteTimeUtc -ge $begin) {
         $evidence.NativeLogFresh = $true
-        $lines = @(Get-Content -LiteralPath $nativeLog -Encoding UTF8)
+        # Read plain strings: Get-Content's provider properties make JSON huge.
+        $lines = @([IO.File]::ReadAllLines($nativeLog, [Text.Encoding]::UTF8))
         $evidence.BuildLine = @($lines | Where-Object { $_ -match 'SkyCraft .* loading \(runtime' } | Select-Object -First 1)
         $evidence.WorldChanges = @($lines | Where-Object { $_ -match 'world changed' })
         $evidence.PuppetOn = @($lines | Where-Object { $_ -match 'puppet on' })

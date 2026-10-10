@@ -27,7 +27,7 @@ def build(friend, output):
     manifest['kind']='automatic-test-update';manifest['requiresExistingSkyCraft']=True
     entries['package-manifest.json']=(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode('utf-8')
     entries['НАЧАТЬ.txt']=(f'Обновление и автоматические тесты SkyCraft {manifest["version"]}, r{manifest["packageRevision"]}\r\n'
-        'DLL r6 отозвана: вылет при загрузке на AE. r9 исправляет тип удара великана и добавляет защиту при ожидании геометрии. Начните с ИГРОВЫЕ-ПРОВЕРКИ.html.\r\n'
+        'DLL r6 отозвана: вылет при загрузке на AE. r10 включает исправления удара великана и ожидания геометрии из r9, а также полный журнал новой диагностики. Начните с ИГРОВЫЕ-ПРОВЕРКИ.html.\r\n'
         '1. Распаковать весь ZIP вне Skyrim.\r\n'
         '2. Открыть ИГРОВЫЕ-ПРОВЕРКИ.html (актуальная инструкция).\r\n'
         '3. Выбрать SkyCraft-Хост.exe / SkyCraft-Клиент.exe / SkyCraft-Без-друга.exe.\r\n'

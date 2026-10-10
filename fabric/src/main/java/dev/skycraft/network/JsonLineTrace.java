@@ -27,7 +27,10 @@ public final class JsonLineTrace implements AutoCloseable {
 		"skyrim_linked", "published", "host_port", "marker", "mc_version", "mod_version", "fabric_version",
 		"java_version", "os_name", "os_version", "reason_code", "peer_host", "peer_port",
 		"reason", "mc_x", "mc_y", "mc_z", "sky_x", "sky_y", "sky_z", "teleport_seq",
-		"session", "command", "request_id", "check", "success", "host_authentication");
+		"session", "command", "request_id", "check", "success", "host_authentication",
+		"x", "y", "z", "health", "fall_distance", "on_ground", "shield", "takeover", "collision_known",
+		"world", "epoch", "dy", "known_regions", "triangles", "feet_known", "below_known",
+		"dug_at_feet", "nearby_triangles", "surface", "geometry");
 	private final Path file;
 	private final String runId, role;
 	private final int maxBytes, backups;
@@ -62,8 +65,22 @@ public final class JsonLineTrace implements AutoCloseable {
 		for (var entry : fields.entrySet()) {
 			Object value = entry.getValue();
 			if (!FIELDS.contains(entry.getKey()) || value == null) continue;
+			if (entry.getKey().equals("geometry")) {
+				if (!(value instanceof Iterable<?> rows)) continue;
+				// Only bounded finite numeric triangles; arbitrary nested maps/strings
+				// must not provide another path for credentials or packet contents.
+				var triangles = new java.util.ArrayList<double[]>();
+				var iterator = rows.iterator();
+				for (int i=0;i<32 && iterator.hasNext();i++) {
+					Object row=iterator.next();
+					if (!(row instanceof double[] vertices) || vertices.length!=10) continue;
+					if (java.util.Arrays.stream(vertices).allMatch(Double::isFinite)) triangles.add(vertices.clone());
+				}
+				if (!triangles.isEmpty()) record.put(entry.getKey(),triangles);
+				continue;
+			}
 			if (value instanceof String text) record.put(entry.getKey(), text.substring(0, Math.min(240, text.length())));
-			else if (value instanceof Number || value instanceof Boolean) record.put(entry.getKey(), value);
+			else if ((value instanceof Number number && Double.isFinite(number.doubleValue())) || value instanceof Boolean) record.put(entry.getKey(), value);
 		}
 		if (!queue.offer(JSON.toJson(record))) dropped.incrementAndGet();
 	}

@@ -13,7 +13,7 @@ import subprocess
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_REVISION = 9
+PACKAGE_REVISION = 10
 UPSTREAM_SHA256 = '1133ecde384d70d5261cbc9ba149bc7b544e1653b78846a1623b56241bb392c3'
 NATIVE_SHA256 = '72b0d231f4632cf2268514eece90e9b7adaa2b59c648fcf14aaf55a6513eefa3'
 API_SHA512 = 'ed6b2586d6fde11fde8472f5a527c51e99b67026e46f94d4bfd85e7e28ce5ee299173ee16ad576ceb51f39f98d30a811086a6deb1a86a524859cc16e12da109d'
@@ -91,7 +91,7 @@ def build(output, native_dll=None):
         'mo2Archive':{'file':mod_name,'sha256':sha(mod_zip)},
         'prismInstance':{'file':instance_name,'sha256':sha(instance_zip)},
         'requirements':{'skyrimRuntime':'1.7.104.0','skse':'2.3.1','skseRuntimeDll':'skse64_1_7_104.dll','addressLibrary':'versionlib-1-7-104-0.bin','minecraft':'26.3','fabricLoader':'0.19.5','fabricApi':'0.161.0+26.3','java':25},
-        'verification':'network.8-r9: early physical hit classification, front shield stagger guard, collision readiness and shallow terrain penetration recovery, takeover hold and detailed collision/combat telemetry. Includes previous owner, input and AE fixes. See release report for automated checks; native gameplay and two-PC acceptance remain separate.' if native_dll else 'Upstream native DLL verified by hash; gameplay acceptance remains required.'
+        'verification':'network.8-r10: early physical hit classification, front shield stagger guard, collision readiness and shallow terrain penetration recovery, takeover hold and detailed collision/combat telemetry. Includes previous owner, input and AE fixes. See release report for automated checks; native gameplay and two-PC acceptance remain separate.' if native_dll else 'Upstream native DLL verified by hash; gameplay acceptance remains required.'
     }
     entries={jar_name:jar,mod_name:mod_zip,instance_name:instance_zip,'package-manifest.json':(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode(),'LICENSE.txt':(ROOT/'LICENSE').read_bytes(),'THIRD-PARTY-NOTICES.md':(ROOT/'THIRD-PARTY-NOTICES.md').read_bytes()}
     if native_dll:entries['native/SkyCraft.dll']=dll
@@ -121,7 +121,7 @@ def build(output, native_dll=None):
     for label,script in wrappers.items():
         entries[label]=('@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\\'+script+'" %*\r\nif errorlevel 1 echo Failed. Read the message above.\r\npause\r\n').encode('ascii')
     entries['НАЧАТЬ.txt']=(f'SkyCraft {version}, комплект r{PACKAGE_REVISION} — обновление ОБЕИХ частей\r\n'
-        'DLL r6 отозвана: вылет при загрузке на AE. r9 исправляет тип удара великана и добавляет защиту при ожидании геометрии. Начните с ИГРОВЫЕ-ПРОВЕРКИ.html.\r\n'
+        'DLL r6 отозвана: вылет при загрузке на AE. r10 включает исправления удара великана и ожидания геометрии из r9, а также полный журнал новой диагностики. Начните с ИГРОВЫЕ-ПРОВЕРКИ.html.\r\n'
         '1. Распакуйте весь ZIP вне папки Skyrim.\r\n2. Откройте ИГРОВЫЕ-ПРОВЕРКИ.html: это актуальная инструкция к этой версии.\r\n'
         '3. Закройте Skyrim/Minecraft. Запустите помощник и нажмите «Обновить мод».\r\n'
         '4. При запросе выберите установленную SkyCraft.dll: MO2 -> правой кнопкой по SkyCraft -> Открыть в проводнике -> SKSE -> Plugins.\r\n'

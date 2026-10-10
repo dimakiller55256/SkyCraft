@@ -29,6 +29,34 @@ class JsonLineTraceTest {
 		assertEquals(2, text.lines().count());
 		assertNull(trace.errorType());
 	}
+	@Test void retainsBoundedCollisionEvidenceWithoutNestedSecrets() throws Exception {
+		Path file=directory.resolve("collision.jsonl");
+		var trace=new JsonLineTrace(file,"COLLISION","client");
+		var rows=new java.util.ArrayList<Object>();
+		rows.add(Map.of("password","never-write-nested-secret"));
+		for(int i=0;i<50;i++)rows.add(new double[]{i,1,2,3,4,5,6,7,8,1});
+		trace.event("collision_guard",Map.of("x",-12.5,"health",20,"fall_distance",4.5,"feet_known",true,"geometry",rows));
+		trace.close();assertTrue(trace.awaitClosed(Duration.ofSeconds(3)));
+		String text=Files.readString(file);assertFalse(text.contains("never-write"));
+		var record=JsonParser.parseString(text.lines().findFirst().orElseThrow()).getAsJsonObject();
+		assertEquals(-12.5,record.get("x").getAsDouble());assertEquals(20,record.get("health").getAsInt());
+		assertEquals(4.5,record.get("fall_distance").getAsDouble());assertTrue(record.get("feet_known").getAsBoolean());
+		var triangles=record.getAsJsonArray("geometry");assertEquals(31,triangles.size());
+		assertEquals(10,triangles.get(0).getAsJsonArray().size());assertNull(trace.errorType());
+	}
+	@Test void invalidGeometryAndNonFiniteNumbersCannotBreakTrace() throws Exception {
+		Path file=directory.resolve("invalid-geometry.jsonl");
+		var trace=new JsonLineTrace(file,"INVALID_GEOMETRY","client");
+		trace.event("collision_guard",Map.of("x",Double.NaN,"y",Double.POSITIVE_INFINITY,
+			"geometry",java.util.List.of(new double[]{1,2},new double[]{Double.NaN,1,2,3,4,5,6,7,8,1},"never-write-geometry-secret"),"reason","fall_probe"));
+		trace.event("collision_guard",Map.of("geometry","never-write-top-level-geometry-secret"));
+		trace.close();assertTrue(trace.awaitClosed(Duration.ofSeconds(3)));
+		String text=Files.readString(file);assertFalse(text.contains("never-write"));
+		var record=JsonParser.parseString(text.lines().findFirst().orElseThrow()).getAsJsonObject();
+		assertFalse(record.has("x"));assertFalse(record.has("y"));assertFalse(record.has("geometry"));
+		assertEquals("fall_probe",record.get("reason").getAsString());assertNull(trace.errorType());
+	}
+
 	@Test void rotatesFilesAndRetainsValidJsonRecords() throws Exception {
 		Path file = directory.resolve("test.jsonl");
 		var trace = new JsonLineTrace(file, "A02", "host", 512, 2);

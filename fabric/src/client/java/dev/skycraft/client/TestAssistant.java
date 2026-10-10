@@ -203,6 +203,9 @@ public final class TestAssistant {
 		data.put("shieldRaised",mc.player!=null && mc.player.isBlocking());
 		data.put("health",mc.player==null?0:mc.player.getHealth());
 		data.put("armor",mc.player==null?0:mc.player.getArmorValue());
+		data.put("fallDistance",mc.player==null?0:mc.player.fallDistance);
+		data.put("skyrimTakeover",SkyClient.sky().takingOver());
+		data.put("collisionKnown",mc.player!=null && dev.skycraft.world.SkyCollision.movementKnown(mc.player.getBoundingBox()));
 		data.put("actorHitsReceived",ActorSyncClient.receivedHits);
 		data.put("collisionEpoch", SkyClient.sky().collisionEpoch);
 		data.put("inputFresh", dev.skycraft.link.SkyLink.inputFresh());

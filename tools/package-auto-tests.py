@@ -27,11 +27,11 @@ def build(friend, output):
     manifest['kind']='automatic-test-update';manifest['requiresExistingSkyCraft']=True
     entries['package-manifest.json']=(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode('utf-8')
     entries['НАЧАТЬ.txt']=(f'Обновление и автоматические тесты SkyCraft {manifest["version"]}, r{manifest["packageRevision"]}\r\n'
-        'DLL r6 отозвана: вылет при загрузке на AE. r8 сохраняет исправление загрузки и добавляет игровые исправления. Начните с ИГРОВЫЕ-ПРОВЕРКИ.html.\r\n'
+        'DLL r6 отозвана: вылет при загрузке на AE. r9 исправляет тип удара великана и добавляет защиту при ожидании геометрии. Начните с ИГРОВЫЕ-ПРОВЕРКИ.html.\r\n'
         '1. Распаковать весь ZIP вне Skyrim.\r\n'
         '2. Открыть ИГРОВЫЕ-ПРОВЕРКИ.html (актуальная инструкция).\r\n'
         '3. Выбрать SkyCraft-Хост.exe / SkyCraft-Клиент.exe / SkyCraft-Без-друга.exe.\r\n'
-        '4. При закрытых Skyrim/Minecraft нажать «Обновить мод»: нужен network.7 JAR и DLL на обоих ПК. Выберите установленную SkyCraft.dll в MO2 -> SkyCraft -> SKSE -> Plugins.\r\n'
+        '4. При закрытых Skyrim/Minecraft нажать «Обновить мод»: нужен network.8 JAR и DLL на обоих ПК. Выберите установленную SkyCraft.dll в MO2 -> SkyCraft -> SKSE -> Plugins.\r\n'
         '5. MO2/SKSE -> отдельное тестовое сохранение -> помощник -> «Игровой тест до остановки».\r\n'
         '6. Хост передаёт новый код SCY2 клиенту; в конце «Остановить и собрать отчёт» -> «Открыть отчёты».\r\n'
         'В маленьком комплекте нет полного MO2/Prism для новой установки; для неё нужен friend-kit.\r\n').encode('utf-8-sig')

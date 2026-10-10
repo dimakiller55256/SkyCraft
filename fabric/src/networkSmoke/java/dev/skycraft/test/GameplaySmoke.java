@@ -172,6 +172,7 @@ final class GameplaySmoke {
     private boolean inputChecked;
     private void inputCheckOnce(Minecraft mc)throws Exception{if(!inputChecked){inputCheck(mc);inputChecked=true;}}
     private static void inputCheck(Minecraft mc)throws Exception {
+        collisionCheck(mc);
         var key=dev.skycraft.client.InputBridge.class.getDeclaredMethod("key",Minecraft.class,long.class,int.class,boolean.class);key.setAccessible(true);
         long handle=mc.getWindow().handle();
         key.invoke(null,mc,handle,225,true);key.invoke(null,mc,handle,26,true);
@@ -182,6 +183,43 @@ final class GameplaySmoke {
         dev.skycraft.client.InputBridge.releaseAll();
         if(mc.options.keyUp.isDown()||mc.options.keyUse.isDown())throw new IllegalStateException("Orphan bindings survived releaseAll");
         Files.writeString(mc.gameDirectory.toPath().resolve("input-check.txt"),"PASS: actual keyPress Shift+W/release; orphan movement and use bindings cleared");
+    }
+    private static void collisionCheck(Minecraft mc)throws Exception {
+        var store=dev.skycraft.world.SkyCollision.class;
+        var clear=store.getDeclaredMethod("clear",int.class);clear.setAccessible(true);
+        var tris=store.getDeclaredMethod("readTris",java.lang.foreign.MemorySegment.class,long.class);tris.setAccessible(true);
+        var voxels=store.getDeclaredMethod("readRegion",java.lang.foreign.MemorySegment.class,long.class);voxels.setAccessible(true);
+        var sky=dev.skycraft.client.SkyClient.sky();int flags=sky.flags;
+        double distance=mc.player.fallDistance;
+        try(var arena=java.lang.foreign.Arena.ofConfined()) {
+            clear.invoke(null,991);sky.flags=dev.skycraft.link.Proto.SKY_IN_GAME;
+            var move=new net.minecraft.world.phys.Vec3(.1,-.0784,0);
+            if(!dev.skycraft.client.SkyCollider.collide(mc.player,move).equals(net.minecraft.world.phys.Vec3.ZERO))throw new IllegalStateException("Unknown geometry allowed player to fall");
+            int rx=(int)Math.floor(mc.player.getX()/8),ry=(int)Math.floor(mc.player.getY()/8),rz=(int)Math.floor(mc.player.getZ()/8);
+            var mem=arena.allocate(112,8);
+            for(int x=rx-1;x<=rx+1;x++)for(int y=ry-1;y<=ry+1;y++)for(int z=rz-1;z<=rz+1;z++) {
+                mem.fill((byte)0);
+                int[] header={x*8,y*8,z*8,x*8+7,y*8+7,z*8+7,991,0};
+                for(int i=0;i<header.length;i++)mem.set(java.lang.foreign.ValueLayout.JAVA_INT,i*4L,header[i]);
+                tris.invoke(null,mem,0L);voxels.invoke(null,mem,0L);
+            }
+            if(!dev.skycraft.client.SkyCollider.collide(mc.player,move).equals(move))throw new IllegalStateException("Known empty space blocked legitimate falling");
+            double floor=mc.player.getY()+.05;
+            mem.fill((byte)0);
+            int fy=(int)Math.floor(floor/8),minX=rx*8,minZ=rz*8;
+            int[] header={minX,fy*8,minZ,minX+7,fy*8+7,minZ+7,991,2};
+            for(int i=0;i<header.length;i++)mem.set(java.lang.foreign.ValueLayout.JAVA_INT,i*4L,header[i]);
+            float[][] vertices={{minX,(float)floor,minZ,minX+8,(float)floor,minZ+8,minX+8,(float)floor,minZ},{minX,(float)floor,minZ,minX,(float)floor,minZ+8,minX+8,(float)floor,minZ+8}};
+            for(int i=0;i<2;i++) {
+                for(int n=0;n<9;n++)mem.set(java.lang.foreign.ValueLayout.JAVA_FLOAT,32+i*40L+n*4L,vertices[i][n]);
+                mem.set(java.lang.foreign.ValueLayout.JAVA_INT,32+i*40L+36,dev.skycraft.link.Proto.TRI_TERRAIN);
+            }
+            tris.invoke(null,mem,0L);mc.player.fallDistance=.1;
+            if(dev.skycraft.client.SkyCollider.collide(mc.player,move).y<=0)throw new IllegalStateException("Late terrain did not repair shallow penetration");
+            sky.flags|=dev.skycraft.link.Proto.SKY_TAKEOVER;
+            if(!dev.skycraft.client.SkyCollider.collide(mc.player,move).equals(net.minecraft.world.phys.Vec3.ZERO))throw new IllegalStateException("Minecraft moved during Skyrim takeover");
+            Files.writeString(mc.gameDirectory.toPath().resolve("collision-check.txt"),"PASS: actual collider holds unknown geometry; known empty permits falling; late terrain lifts feet; Skyrim takeover freezes Minecraft");
+        }finally{sky.flags=flags;mc.player.fallDistance=distance;clear.invoke(null,-1);}
     }
     private static void press(Minecraft mc,String label){((Button)Screens.getWidgets(mc.gui.screen()).stream().filter(w->w instanceof Button&&w.getMessage().getString().equals(label)).findFirst().orElseThrow()).onPress(new KeyEvent(257,0,0));}
     private void finish(Minecraft mc,String result){

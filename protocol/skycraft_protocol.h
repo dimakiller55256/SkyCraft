@@ -59,6 +59,7 @@ namespace skycraft::proto
 		kSkyInGame = 1u << 0,    // a save is loaded and the player exists
 		kSkyMenuOpen = 1u << 1,  // a Skyrim menu owns input; MC should drop held keys
 		kSkyLoading = 1u << 2,   // loading screen / cell transition in progress
+		kSkyTakeover = 1u << 3,  // Skyrim owns animation/physics (ragdoll, furniture, scene)
 	};
 
 	// Skyrim's water (lakes, rivers, the sea) around the player, for Minecraft to treat as its own
@@ -100,6 +101,7 @@ namespace skycraft::proto
 		kMcDead = 1u << 5,
 		kMcSwimming = 1u << 6,
 		kMcFlying = 1u << 7,
+		kMcBlocking = 1u << 8,  // Minecraft shield is actually raised, after its warm-up
 	};
 
 	struct McState

@@ -116,6 +116,13 @@ public final class NetworkDiagnostics {
 		Map<String, Object> fields = new LinkedHashMap<>();
 		fields.put("skyrim_linked", SkyLink.active());
 		var server = minecraft.getSingleplayerServer();
+		if(minecraft.player!=null && SkyLink.active()) {
+			var player=minecraft.player;
+			fields.put("x",player.getX());fields.put("y",player.getY());fields.put("z",player.getZ());
+			fields.put("health",player.getHealth());fields.put("fall_distance",player.fallDistance);fields.put("on_ground",player.onGround());
+			fields.put("shield",player.isBlocking());fields.put("takeover",SkyClient.sky().takingOver());
+			fields.put("collision_known",dev.skycraft.world.SkyCollision.movementKnown(player.getBoundingBox()));
+		}
 		fields.put("published", server != null && server.isPublished());
 		if (server != null && server.isPublished()) fields.put("host_port", server.getPort());
 		if (minecraft.getConnection() != null && minecraft.player != null) {

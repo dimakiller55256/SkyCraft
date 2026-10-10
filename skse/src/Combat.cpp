@@ -1,4 +1,5 @@
 #include "Game.h"
+#include "CombatPolicy.h"
 
 namespace skycraft
 {
@@ -6,7 +7,6 @@ namespace skycraft
 	{
 		constexpr float kActorRange = 80.0f * static_cast<float>(proto::kUnitsPerBlock);  // stand-ins exist this far out
 		constexpr float kPi = 3.14159265f;
-		constexpr float kHitMemorySeconds = 0.35f;   // how long a hit event can explain a health drop
 		constexpr float kDotFlushSeconds = 0.5f;     // magic/other damage is batched (Minecraft i-frames)
 
 		// ---- what hit the player (main thread) -------------------------------------------------
@@ -15,11 +15,12 @@ namespace skycraft
 			RE::FormID   attacker{ 0 };
 			proto::HurtKind kind{ proto::kHurtMelee };
 			std::uint32_t flags{ 0 };
-			float        age{ 99.0f };
+			CombatPolicy::Clock::time_point at{};
 		};
 		RecentHit lastHit;               // from TESHitEvent (kind, power attack, ...)
 		RE::FormID lastDamager{ 0 };     // from HandleHealthDamage
-		float      lastDamagerAge{ 99.0f };
+		CombatPolicy::Clock::time_point lastDamagerAt{};
+		bool meleeInProgress = false;
 
 		struct PendingHurt
 		{
@@ -52,12 +53,12 @@ namespace skycraft
 			RE::BSEventNotifyControl ProcessEvent(const RE::TESHitEvent* a_event, RE::BSTEventSource<RE::TESHitEvent>*) override
 			{
 				auto* player = RE::PlayerCharacter::GetSingleton();
-				if (!a_event || !player || a_event->target.get() != player || !State().puppeting) {
+				if (!a_event || !player || a_event->target.get() != player || !State().mcInWorld || !Link::Get().McAlive()) {
 					return RE::BSEventNotifyControl::kContinue;
 				}
 				RecentHit hit;
 				hit.attacker = a_event->cause ? a_event->cause->GetFormID() : 0;
-				hit.age = 0.0f;
+				hit.at = CombatPolicy::Clock::now();
 				if (a_event->projectile != 0) {
 					hit.kind = proto::kHurtProjectile;
 				} else if (auto* source = RE::TESForm::LookupByID(a_event->source)) {
@@ -80,7 +81,11 @@ namespace skycraft
 				if (a_event->flags.any(RE::TESHitEvent::Flag::kHitBlocked)) {
 					hit.flags |= proto::kHurtBlockedInSkyrim;
 				}
+				// The verified engine melee call identifies the underlying physical hit even
+				// when its attack-data spell emits a second TESHitEvent during processing.
+				if (meleeInProgress) hit.kind = proto::kHurtMelee;
 				lastHit = hit;
+				logger::info("incoming hit: attacker {:08X}, source {:08X}, projectile {:08X}, kind {}, flags {:#x}", hit.attacker, a_event->source, a_event->projectile, static_cast<int>(hit.kind), hit.flags);
 				for (auto& damage : capturedDamage) if (!damage.typed && damage.attacker==hit.attacker) {
 					damage.kind=hit.kind;damage.flags=hit.flags;damage.typed=true;
 				}
@@ -101,14 +106,16 @@ namespace skycraft
 				const float deficit=owned ? a_this->GetActorValueMax(RE::ActorValue::kHealth)-av->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
 				if (owned && std::isfinite(deficit) && deficit > 0.01f && capturedDamage.size() < 64) {
 					av->RestoreActorValue(RE::ActorValue::kHealth,deficit);
-					capturedDamage.push_back({ std::min(deficit, 10000.0f), a_attacker ? a_attacker->GetFormID() : 0 });
+					CapturedDamage damage{ std::min(deficit, 10000.0f), a_attacker ? a_attacker->GetFormID() : 0 };
+					if (meleeInProgress) { damage.kind=proto::kHurtMelee;damage.flags=lastHit.flags;damage.typed=true; }
+					capturedDamage.push_back(damage);
 					func(a_this, a_attacker, 0.0f);
 				} else {
 					func(a_this, a_attacker, a_damage);
 				}
 				if (a_attacker && a_attacker != a_this) {
 					lastDamager = a_attacker->GetFormID();
-					lastDamagerAge = 0.0f;
+					lastDamagerAt = CombatPolicy::Clock::now();
 				}
 			}
 			static inline REL::Relocation<decltype(thunk)> func;
@@ -144,8 +151,9 @@ namespace skycraft
 		// Minecraft owns the player's health: Skyrim damage is refunded here and sent to Minecraft.
 		void BridgePlayerDamage(RE::PlayerCharacter* a_player, float a_delta)
 		{
+			const auto now = CombatPolicy::Clock::now();
 			for (const auto& damage : capturedDamage) {
-				const bool explained = lastHit.age < kHitMemorySeconds && lastHit.attacker == damage.attacker;
+				const bool explained = CombatPolicy::Recent(lastHit.at, now) && lastHit.attacker == damage.attacker;
 				SendHurt(damage.typed ? damage.kind : explained ? lastHit.kind : proto::kHurtOther, damage.damage, damage.attacker, damage.typed ? damage.flags : explained ? lastHit.flags : 0);
 			}
 			capturedDamage.clear();
@@ -153,8 +161,6 @@ namespace skycraft
 			const float max = a_player->GetActorValueMax(RE::ActorValue::kHealth);
 			const float cur = av->GetActorValue(RE::ActorValue::kHealth);
 			const float deficit = max - cur;
-			lastHit.age += a_delta;
-			lastDamagerAge += a_delta;
 			if (!healthPrimed) {
 				// Whatever damage the save had before Minecraft took over isn't a new hit.
 				healthPrimed = true;
@@ -168,14 +174,16 @@ namespace skycraft
 				RE::FormID      attacker = 0;
 				proto::HurtKind kind = proto::kHurtOther;
 				std::uint32_t   flags = 0;
-				if (lastHit.age < kHitMemorySeconds) {
+				if (CombatPolicy::Recent(lastHit.at, now)) {
 					attacker = lastHit.attacker;
 					kind = lastHit.kind;
 					flags = lastHit.flags;
-					lastHit.age = 99.0f;  // one hit event explains one health drop
-				} else if (lastDamagerAge < kHitMemorySeconds) {
+					lastHit.at = {};  // one hit event explains one health drop
+				} else if (CombatPolicy::Recent(lastDamagerAt, now)) {
 					attacker = lastDamager;
-					kind = proto::kHurtMagic;  // damage over time from someone (spells, poison)
+					// Knowing who dealt damage does not establish that it was magic.
+					// Explicit spell TESHitEvent remains the source of magic classification.
+					kind = proto::kHurtOther;
 				}
 				if (kind == proto::kHurtMelee || kind == proto::kHurtProjectile) {
 					SendHurt(kind, deficit, attacker, flags);
@@ -248,6 +256,40 @@ namespace skycraft
 		ProcessHitFn*  processHit = nullptr;
 		HitDataCtorFn* hitDataCtor = nullptr;
 
+		struct IncomingMeleeHook
+		{
+			static void thunk(RE::Actor* victim, RE::HitData& data)
+			{
+				auto aggressor = data.aggressor.get();
+				const bool owned = victim == RE::PlayerCharacter::GetSingleton() && State().mcInWorld && Link::Get().McAlive() && !victim->IsDead();
+				const bool previous = meleeInProgress;
+				if (owned) {
+					lastHit = { aggressor ? aggressor->GetFormID() : 0, proto::kHurtMelee,
+						(data.flags.any(RE::HitData::Flag::kPowerAttack) ? proto::kHurtPowerAttack : 0u), CombatPolicy::Clock::now() };
+					meleeInProgress = true;
+					proto::McState mc{};
+					const auto origin = aggressor ? SkyToMc(aggressor->GetPosition()) : McVec{};
+					const auto here = SkyToMc(victim->GetPosition());
+					const bool shield = aggressor && Link::Get().ReadMcState(mc) && (mc.flags & proto::kMcBlocking) &&
+						!State().skyrimMenuOpen && CombatPolicy::InShieldFront(State().yaw, origin.x-here.x, origin.z-here.z);
+					if (shield) {
+						// Minecraft decides damage/blocking. Avoid Skyrim launching the body
+						// before that decision for a front hit against an already raised shield.
+						data.stagger = 0.0f;
+						data.pushBack = 0.0f;
+					}
+					logger::info("incoming melee: attacker {:08X}, raw {:.1f}, shield front {}, stagger {:.2f}, push {:.2f}", lastHit.attacker, data.totalDamage, shield, data.stagger, data.pushBack);
+				}
+				func(victim, data);
+				if (owned) lastHit.at = CombatPolicy::Clock::now();
+				if (owned) for (auto& damage : capturedDamage) if (!damage.typed && damage.attacker == lastHit.attacker) {
+					damage.kind = proto::kHurtMelee; damage.flags = lastHit.flags; damage.typed = true;
+				}
+				meleeInProgress = previous;
+			}
+			static inline REL::Relocation<ProcessHitFn*> func;
+		};
+
 		void ResolveHitPipeline()
 		{
 			if (!REL::Module::IsAE()) {
@@ -266,6 +308,7 @@ namespace skycraft
 			}
 			processHit = reinterpret_cast<ProcessHitFn*>(target);
 			hitDataCtor = reinterpret_cast<HitDataCtorFn*>(REL::ID(43995).address());
+			IncomingMeleeHook::func = SKSE::GetTrampoline().write_call<5>(site, IncomingMeleeHook::thunk);
 			logger::info("hit pipeline: Minecraft hits go through Skyrim's hit processing");
 		}
 

@@ -583,17 +583,18 @@ namespace skycraft
 			}
 
 			// Skyrim moved the player itself (load door, fast travel, script, loading a save).
+			const char* takeoverNow = a_player->IsDead() ? nullptr : SkyrimTakeover(a_player);
 			const auto current = a_player->GetPosition();
 			if (loading) {
 				teleportPending = true;
 				haveLastSet = false;
 				settleTimer = kSettleSeconds;
-			} else if (haveLastSet && current.GetDistance(lastSetPos) > kSkyrimTeleportThreshold) {
+			} else if (!takeoverNow && haveLastSet && current.GetDistance(lastSetPos) > kSkyrimTeleportThreshold) {
 				logger::info("Skyrim moved the player ({:.0f} units); resyncing Minecraft", current.GetDistance(lastSetPos));
 				teleportPending = true;
 				haveLastSet = false;
 			}
-			if (teleportPending && !loading) {
+			if (teleportPending && !loading && !takeoverNow) {
 				++teleportSeq;
 				teleportPending = false;
 				st.yaw = HeadingToMcYaw(a_player->data.angle.z);
@@ -620,7 +621,6 @@ namespace skycraft
 			// around them. If it's holding somewhere Skyrim's player isn't, that ground never comes:
 			// send it again to where Skyrim's player really is.
 			static const char* takeover = nullptr;
-			const char*        takeoverNow = a_player->IsDead() ? nullptr : SkyrimTakeover(a_player);
 			if ((takeoverNow != nullptr) != (takeover != nullptr)) {
 				if (takeoverNow) {
 					logger::info("Skyrim takes the player ({})", takeoverNow);
@@ -985,7 +985,7 @@ namespace skycraft
 
 			// Tell Minecraft where Skyrim's player is and where they're looking.
 			proto::SkyState sky{};
-			sky.flags = (cell ? proto::kSkyInGame : 0u) | (menu ? proto::kSkyMenuOpen : 0u) | (loading ? proto::kSkyLoading : 0u);
+			sky.flags = (cell ? proto::kSkyInGame : 0u) | (menu ? proto::kSkyMenuOpen : 0u) | (loading ? proto::kSkyLoading : 0u) | (takeover ? proto::kSkyTakeover : 0u);
 			const auto skyMc = SkyToMc(current);
 			sky.worldId = worldId;
 			sky.collisionEpoch = epoch;

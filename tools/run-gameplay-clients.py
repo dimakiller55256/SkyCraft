@@ -18,7 +18,7 @@ def main():
         # These are owned isolated test directories, never Prism instances.
         assert game.resolve()==ROOT/'.tools'/('gameplay-host' if role=='Host' else 'gameplay-client')
         game.mkdir(exist_ok=True)
-        for name in ('port.txt','smoke-result.txt','dug.txt','server-dug.txt','combat.txt','rejoined.txt','shield-done.txt','ownership.txt','actor-hit.txt','input-check.txt'):(game/name).unlink(missing_ok=True)
+        for name in ('port.txt','smoke-result.txt','dug.txt','server-dug.txt','combat.txt','rejoined.txt','shield-done.txt','ownership.txt','actor-hit.txt','input-check.txt','collision-check.txt'):(game/name).unlink(missing_ok=True)
         (game/'options.txt').write_text('lang:ru_ru\nguiScale:2\nonboardAccessibility:false\nsoundCategory_master:0.0\nrenderDistance:3\nsimulationDistance:5\nmaxFps:30\npauseOnLostFocus:false\n',encoding='utf-8')
         log=(audit/f'{role}-game.log').open('w',encoding='utf-8');logs.append(log)
         p=subprocess.Popen([data['java'],*data['args']],cwd=game,env=env,stdout=log,stderr=subprocess.STDOUT,
@@ -39,7 +39,7 @@ def main():
         path=game/'smoke-result.txt'
         result=path.read_text(encoding='utf-8') if path.exists() else 'FAIL: no test result'
         (audit/f'{role}-result.txt').write_text(result,encoding='utf-8')
-        for name in ('ownership.txt','actor-hit.txt','input-check.txt','combat.txt'):
+        for name in ('ownership.txt','actor-hit.txt','input-check.txt','combat.txt','collision-check.txt'):
             if (game/name).exists():shutil.copyfile(game/name,audit/f'{role}-{name}')
         print(f'{role}: {result}',flush=True)
         failed |= p.returncode!=0 or not result.startswith('PASS')

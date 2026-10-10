@@ -232,6 +232,9 @@ public final class SkyLink {
 		public boolean loading() {
 			return (this.flags & SKY_LOADING) != 0;
 		}
+		public boolean takingOver() {
+			return (this.flags & SKY_TAKEOVER) != 0;
+		}
 	}
 
 	/** Seqlock read of SkyState into {@code out}. Returns false if the link is down. */

@@ -39,6 +39,7 @@ public final class SkyClient {
 	private static final dev.skycraft.link.PlayerSyncGate publication = new dev.skycraft.link.PlayerSyncGate();
 	private static Vec3 holdPos;
 	private static Vec3 unlinkedHold;
+	private static Vec3 takeoverHold;
 	private static long holdSince;
 	private static long qpcFreq;
 	private static LocalPlayer eyePlayer;
@@ -67,7 +68,7 @@ public final class SkyClient {
 		return sky;
 	}
 	public static boolean positionReady() {
-		return linked && ActorSyncClient.compatible() && publication.observe(Minecraft.getInstance().player, sky.teleportSeq) && !teleportPending && holdPos == null;
+		return linked && !sky.takingOver() && ActorSyncClient.compatible() && publication.observe(Minecraft.getInstance().player, sky.teleportSeq) && !teleportPending && holdPos == null;
 	}
 	public static void worldTransition() {
 		publication.invalidate(); lastPlayer = null; teleportPending = true; holdPos = null; holdSince = 0;
@@ -121,7 +122,7 @@ public final class SkyClient {
 		applyViewportSize(minecraft);
 		MirrorWorld.openWhenReady(minecraft);
 
-		boolean controlsEnabled = !sky.menuOpen() && !sky.loading() && SkyLink.inputFresh() && ActorSyncClient.compatible();
+		boolean controlsEnabled = !sky.menuOpen() && !sky.loading() && !sky.takingOver() && SkyLink.inputFresh() && ActorSyncClient.compatible();
 		if (!controlsEnabled) {
 			InputBridge.releaseAll();
 		}
@@ -138,13 +139,14 @@ public final class SkyClient {
 		// A new player object means we just joined or respawned: put it where Skyrim's player is.
 		if (player != lastPlayer) {
 			lastPlayer = player;
+			takeoverHold = null;
 			teleportPending = true;
 		}
 		if (sky.teleportSeq != lastTeleportSeq) {
 			lastTeleportSeq = sky.teleportSeq;
 			teleportPending = true;
 		}
-		if (teleportPending && sky.inGame() && !sky.loading()) {
+		if (teleportPending && sky.inGame() && !sky.loading() && !sky.takingOver()) {
 			NetworkDiagnostics.position("before_skyrim_teleport", minecraft);
 			requestTeleport(minecraft, sky.x, sky.y, sky.z, sky.yaw, sky.pitch);
 			teleportAck = sky.teleportSeq;
@@ -205,8 +207,18 @@ public final class SkyClient {
 		DiscordPresence.tick(minecraft);
 		SkyDigClient.tick(minecraft);
 		freezeWhileUnlinked(minecraft);
+		freezeDuringTakeover(minecraft);
 		holdUntilReady(minecraft);
 		publishTick(minecraft);
+	}
+	private static void freezeDuringTakeover(Minecraft minecraft) {
+		LocalPlayer player=minecraft.player;
+		if (!linked || !sky.takingOver() || player==null) { takeoverHold=null; return; }
+		if (takeoverHold==null) takeoverHold=player.position();
+		player.setDeltaMovement(Vec3.ZERO);
+		player.setPos(takeoverHold.x,takeoverHold.y,takeoverHold.z);
+		player.xo=takeoverHold.x;player.yo=takeoverHold.y;player.zo=takeoverHold.z;
+		player.resetFallDistance();
 	}
 
 	/**
@@ -391,6 +403,7 @@ public final class SkyClient {
 			if (player.getAbilities().flying) {
 				flags |= Proto.MC_FLYING;
 			}
+			if (player.isBlocking()) flags |= Proto.MC_BLOCKING;
 			mc.x = feet.x;
 			mc.y = feet.y;
 			mc.z = feet.z;

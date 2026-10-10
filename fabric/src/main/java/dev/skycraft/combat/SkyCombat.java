@@ -239,6 +239,8 @@ public final class SkyCombat {
 		trainDefence(player, damage, blocking && player.getHealth() >= healthBefore - 1.0E-3F);
 		SkyCraft.LOG.info("SkyCraft: Skyrim hit the player for {} ({} Minecraft): health {} -> {}{}", skyrimDamage, damage, healthBefore, player.getHealth(),
 			hurt ? "" : " (blocked/immune)");
+		SkyCraft.LOG.info("SkyCraft combat evidence: owner {}, kind {}, source {}, attacker {}, shield {}, armor {}, origin {}, health {} -> {}",
+			player.getUUID(),kind,source.getMsgId(),Integer.toHexString(attackerFormId),blocking,player.getArmorValue(),source.getSourcePosition(),healthBefore,player.getHealth());
 		if (hurt && attacker != null && (flags & Proto.HURT_POWER_ATTACK) != 0 && !player.isBlocking()) {
 			// Power attacks shove harder, like a sprint hit does in Minecraft.
 			player.knockback(0.5, attacker.getX() - player.getX(), attacker.getZ() - player.getZ(), source, damage);

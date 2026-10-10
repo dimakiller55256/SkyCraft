@@ -89,4 +89,4 @@ try {
     if ($nativeTemporary -and (Test-Path -LiteralPath $nativeTemporary)) { Remove-Item -LiteralPath $nativeTemporary }
 }
 Write-Host "Установлен SkyCraft $($manifest.version). Старые SkyCraft/e4mc сохранены: $backupPath"
-Write-Host 'Fabric API, настройки, аккаунты и миры сохранены. Теперь запустите Проверить сборку.cmd.'
+Write-Host 'Fabric API, настройки, аккаунты и миры сохранены. Продолжите по файлу ИГРОВЫЕ-ПРОВЕРКИ.html в распакованном комплекте.'

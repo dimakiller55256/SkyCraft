@@ -13,7 +13,7 @@ import subprocess
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_REVISION = 6
+PACKAGE_REVISION = 7
 UPSTREAM_SHA256 = '1133ecde384d70d5261cbc9ba149bc7b544e1653b78846a1623b56241bb392c3'
 NATIVE_SHA256 = '72b0d231f4632cf2268514eece90e9b7adaa2b59c648fcf14aaf55a6513eefa3'
 API_SHA512 = 'ed6b2586d6fde11fde8472f5a527c51e99b67026e46f94d4bfd85e7e28ce5ee299173ee16ad576ceb51f39f98d30a811086a6deb1a86a524859cc16e12da109d'
@@ -87,11 +87,11 @@ def build(output, native_dll=None):
         'sourceCommit':subprocess.check_output(['git','-c',f'safe.directory={ROOT}','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
         'upstream':{'url':'https://github.com/chasmlol/SkyCraft/releases/tag/v0.1.2','zipSha256':UPSTREAM_SHA256},
         'fabricJar':{'file':jar_name,'sha256':sha(jar)},
-        'nativeDll':{'version':version if native_dll else '0.1.2','file':'native/SkyCraft.dll','sha256':sha(dll),'changed':native_dll is not None,'upstreamSha256':NATIVE_SHA256},
+        'nativeDll':{'version':f'{version}-r{PACKAGE_REVISION}' if native_dll else '0.1.2','file':'native/SkyCraft.dll','sha256':sha(dll),'changed':native_dll is not None,'upstreamSha256':NATIVE_SHA256},
         'mo2Archive':{'file':mod_name,'sha256':sha(mod_zip)},
         'prismInstance':{'file':instance_name,'sha256':sha(instance_zip)},
         'requirements':{'skyrimRuntime':'1.7.104.0','skse':'2.3.1','skseRuntimeDll':'skse64_1_7_104.dll','addressLibrary':'versionlib-1-7-104-0.bin','minecraft':'26.3','fabricLoader':'0.19.5','fabricApi':'0.161.0+26.3','java':25},
-        'verification':'Built Java/native changes. Two isolated Minecraft clients tested LAN GUI, PLAY and dig replication/reconnect. Native Skyrim doors/knockdown and gameplay between PCs require the included acceptance tests.' if native_dll else 'Upstream native DLL verified by hash; gameplay acceptance remains required.'
+        'verification':'Native r7 built and installed; user confirmed two previously failing saves loaded with Minecraft HUD and movement. Java network.6 is unchanged from the tested LAN/PLAY/dig/shield/armor build. Native doors/knockdown and gameplay between PCs still require acceptance tests.' if native_dll else 'Upstream native DLL verified by hash; gameplay acceptance remains required.'
     }
     entries={jar_name:jar,mod_name:mod_zip,instance_name:instance_zip,'package-manifest.json':(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode(),'LICENSE.txt':(ROOT/'LICENSE').read_bytes(),'THIRD-PARTY-NOTICES.md':(ROOT/'THIRD-PARTY-NOTICES.md').read_bytes()}
     if native_dll:entries['native/SkyCraft.dll']=dll
@@ -111,12 +111,15 @@ def build(output, native_dll=None):
         entries[name]=assistant
     entries['АВТОТЕСТЫ.html']=autotest_html()
     entries['ИГРОВЫЕ-ПРОВЕРКИ.html']=guide_html('YS-GAMEPLAY.md')
+    entries['ИСПРАВЛЕНИЕ-ЗАГРУЗКИ.html']=guide_html('YS-LOADFIX-R7.md')
+    entries['docs/YS-LOADFIX-R7.md']=(ROOT/'docs/YS-LOADFIX-R7.md').read_bytes()
     entries['docs/YS-GAMEPLAY.md']=(ROOT/'docs/YS-GAMEPLAY.md').read_bytes()
     entries['docs/YS-NETWORK6-VALIDATION.md']=(ROOT/'docs/YS-NETWORK6-VALIDATION.md').read_bytes()
     wrappers={'Установить обновление.cmd':'install-friend-update.ps1','Проверить сборку.cmd':'check-friend-installation.ps1','Собрать отчёт.cmd':'collect-friend-report.ps1','Адреса хоста.cmd':'show-host-addresses.ps1','Наблюдать запуск.cmd':'capture-skyrim-startup.ps1'}
     for label,script in wrappers.items():
         entries[label]=('@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\\'+script+'" %*\r\nif errorlevel 1 echo Failed. Read the message above.\r\npause\r\n').encode('ascii')
-    entries['НАЧАТЬ.txt']=(f'SkyCraft {version} — обновление ОБЕИХ частей\r\n'
+    entries['НАЧАТЬ.txt']=(f'SkyCraft {version}, комплект r{PACKAGE_REVISION} — обновление ОБЕИХ частей\r\n'
+        'DLL r6 отозвана: вылет при загрузке на AE. r7 исправляет этот вызов. Сначала прочитайте ИСПРАВЛЕНИЕ-ЗАГРУЗКИ.html.\r\n'
         '1. Распакуйте весь ZIP вне папки Skyrim.\r\n2. Откройте ИГРОВЫЕ-ПРОВЕРКИ.html: это актуальная инструкция к этой версии.\r\n'
         '3. Закройте Skyrim/Minecraft. Запустите помощник и нажмите «Обновить мод».\r\n'
         '4. При запросе выберите установленную SkyCraft.dll: MO2 -> правой кнопкой по SkyCraft -> Открыть в проводнике -> SKSE -> Plugins.\r\n'

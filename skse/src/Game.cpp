@@ -383,10 +383,15 @@ namespace skycraft
 		// up again from wherever Skyrim leaves them.
 		const char* SkyrimTakeover(RE::PlayerCharacter* a_player)
 		{
-			if (a_player->IsEssentialDown() || a_player->IsInRagdollState()) {
+			auto* actorState = a_player->AsActorState();
+			// Read the state directly: pinned CommonLib's IsEssentialDown uses
+			// RELOCATION_ID(48460, 0), so calling it on AE jumps to a null address.
+			// Also release control during knockdown/get-up transitions before physics
+			// starts driving the body. These inline accessors need no game relocation.
+			if (actorState->IsBleedingOut() || actorState->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) {
 				return "knockdown/ragdoll";
 			}
-			if (a_player->AsActorState()->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal) {
+			if (actorState->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal) {
 				return "furniture";
 			}
 			if (a_player->IsOnMount()) {

@@ -138,6 +138,7 @@ if (-not $vsRoot) { throw 'Install Visual Studio 2026 Build Tools with C++ x64/x
 if (-not $cmakeReady) { throw 'CMake is missing. Install the C++ CMake tools component or pass -CMakePath.' }
 if (-not $commonLibReady) { throw 'Run git submodule update --init --recursive.' }
 if (-not $vcpkgReady) { throw 'Clone microsoft/vcpkg into .tools/vcpkg and run bootstrap-vcpkg.bat -disableMetrics.' }
+& (Join-Path $PSScriptRoot 'check-native-api.ps1')
 Push-Location (Join-Path $repoRoot 'skse')
 try {
     & $CMakePath --preset default '-DSKYCRAFT_DEPLOY_DIR='

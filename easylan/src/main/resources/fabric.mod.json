@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "easylan",
+  "version": "1.6a-ys.26.3.1",
+  "name": "EasyLAN (YS — Minecraft 26.3)",
+  "description": "Unofficial Minecraft 26.3 adaptation of EasyLAN; custom LAN menu and explicit online/offline host mode.",
+  "authors": [
+    "Darf / XiaoXianHW",
+    "YS adaptation"
+  ],
+  "license": "GPL-3.0-only",
+  "environment": "client",
+  "entrypoints": {
+    "main": [
+      "org.xiaoxian.EasyLAN"
+    ],
+    "client": [
+      "org.xiaoxian.client.EasyLanClient"
+    ]
+  },
+  "mixins": [
+    "easylan.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "fabric-api": "*",
+    "minecraft": "26.3",
+    "java": ">=25"
+  },
+  "contact": {
+    "sources": "https://github.com/dimakiller55256/SkyCraft/tree/ys/network-prototype/easylan"
+  }
+}

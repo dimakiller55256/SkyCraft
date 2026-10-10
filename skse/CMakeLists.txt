@@ -26,6 +26,8 @@ add_commonlibsse_plugin(
 )
 
 target_include_directories(SkyCraft PRIVATE src ${CMAKE_CURRENT_SOURCE_DIR}/../protocol)
+find_package(nlohmann_json CONFIG REQUIRED)
+target_link_libraries(SkyCraft PRIVATE nlohmann_json::nlohmann_json)
 target_precompile_headers(SkyCraft PRIVATE src/PCH.h)
 target_link_libraries(SkyCraft PRIVATE d3d11.lib d3dcompiler.lib dxgi.lib ole32.lib oleaut32.lib)
 target_compile_definitions(SkyCraft PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

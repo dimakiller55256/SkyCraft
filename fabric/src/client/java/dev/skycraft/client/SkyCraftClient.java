@@ -12,14 +12,22 @@ public final class SkyCraftClient implements ClientModInitializer {
 		dev.skycraft.link.SkyLink.announceRunning();
 		DiscordPresence.start();
 		DestructionToggle.register();
-		// Multiplayer without editing files: the host opens their world to LAN (O, Open to LAN) and
-		// e4mc gives them a link; friends type /join <link> in chat, and /leave to come back.
+		NetworkMenu.register();
+		DigSyncClient.init();
+		NetworkClient.register();
+		ActorSyncClient.init();
+		dev.skycraft.combat.SkyrimActorEntity.setLocalPick(actor -> {
+			var player=net.minecraft.client.Minecraft.getInstance().player;
+			return player!=null && actor.ownedBy(player.getUUID());
+		});
+		NetworkDiagnostics.initialize(net.minecraft.client.Minecraft.getInstance());
+		TestAssistant.initialize();
+		// /skycraft host opens a fixed port; /join <address> and /leave switch worlds.
 		net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback.EVENT.register((dispatcher, context) -> {
 			dispatcher.register(net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal("join")
 				.then(net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument("link", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
 					.executes(c -> {
 						String link = com.mojang.brigadier.arguments.StringArgumentType.getString(c, "link");
-						c.getSource().sendFeedback(net.minecraft.network.chat.Component.literal("Joining " + link.trim() + "..."));
 						// After the chat screen has closed: this leaves the current world.
 						net.minecraft.client.Minecraft.getInstance().execute(() -> MirrorWorld.joinFriend(net.minecraft.client.Minecraft.getInstance(), link));
 						return 1;
@@ -39,10 +47,14 @@ public final class SkyCraftClient implements ClientModInitializer {
 				return;
 			}
 			minecraft.execute(() -> {
+				int parsedPort;
+				try { parsedPort = Integer.parseInt(port.trim()); }
+				catch (NumberFormatException e) { dev.skycraft.SkyCraft.LOG.warn("SkyCraft: invalid SKYCRAFT_LAN_PORT"); return; }
+				if (parsedPort < 1 || parsedPort > 65535) { dev.skycraft.SkyCraft.LOG.warn("SkyCraft: invalid SKYCRAFT_LAN_PORT"); return; }
 				if (System.getenv("SKYCRAFT_LAN_OFFLINE") != null) {
 					server.setUsesAuthentication(false);
 				}
-				boolean ok = server.publishServer(net.minecraft.server.MinecraftServer.MultiplayerScope.LAN, false, Integer.parseInt(port.trim()));
+				boolean ok = server.publishServer(net.minecraft.server.MinecraftServer.MultiplayerScope.LAN, false, parsedPort);
 				dev.skycraft.SkyCraft.LOG.info("SkyCraft: world opened to LAN on port {} ({}{})", port.trim(), ok ? "ok" : "FAILED",
 					System.getenv("SKYCRAFT_LAN_OFFLINE") != null ? ", offline logins allowed" : "");
 			});
@@ -58,6 +70,8 @@ public final class SkyCraftClient implements ClientModInitializer {
 		// Players (client-side movement AND the integrated server's re-check of it) use the smooth
 		// triangle collider, never Skyrim's voxels; otherwise the server sees the smooth position
 		// dip into a voxel and teleports the player back every few ticks.
-		dev.skycraft.world.SkyCollision.setSmoothCollider(e -> e instanceof net.minecraft.world.entity.player.Player && SkyClient.linked());
+		// A paused/alt-tabbed Skyrim stops its heartbeat. Keep the server's collision policy:
+		// switching guests back to the host's voxel approximation causes correction loops.
+		dev.skycraft.world.SkyCollision.setSmoothCollider(e -> e instanceof net.minecraft.world.entity.player.Player && SkyClient.tookOver());
 	}
 }

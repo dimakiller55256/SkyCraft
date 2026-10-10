@@ -1,0 +1,45 @@
+"""Add the automatic second-round plan to the existing workbook and export CSV/HTML."""
+import csv
+import html
+from pathlib import Path
+import importlib.util
+
+ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location('network_workbook', ROOT/'tools/create-network-test-kit.py')
+workbook = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(workbook)
+
+HEADERS = ['ID', 'Условия / порядок', 'Что делает хост', 'Что делает клиент / один ПК', 'Что измеряет программа', 'Что передать / критерий']
+ROWS = [
+    ['G01', 'Обновить оба ПК', 'Распаковать весь network.5 вне Skyrim. В помощнике выбрать реальную папку Minecraft. Закрыть обе игры → «Обновить мод».', 'То же. Minecraft: Prism → экземпляр → Папка Minecraft. Skyrim: папка SkyrimSE.exe. Моды MO2: настройки MO2 → Пути → Моды.', 'Один SkyCraft JAR network.5, хэши, резервная копия прежнего JAR.', 'Не запускать EXE из ZIP. Старые отчёты сохранить. Подробности: АВТОТЕСТЫ.html, раздел Подготовка.'],
+    ['G02', 'Загрузить сохранение', 'MO2 → SKSE → отдельное сохранение после Хелгена. Дождаться HUD/движения, встать на устойчивой поверхности.', 'То же. Не сохранять поверх основного сохранения.', 'Живая связь Skyrim и готовая позиция до начала теста.', 'Главного меню недостаточно.'],
+    ['G03-AUTH', 'Автономный профиль / Недействительная сессия', 'До запуска: закрыть и вновь запустить Skyrim/Minecraft. Хост: Общая виртуальная сеть + DIRECT + галочка «Хост: автономные профили (частная LAN/Radmin)».', 'Режим OFFLINE придёт в новом SCY2; самому менять properties не нужно. Для домашней LAN выбрать Одна локальная сеть.', 'HOST_AUTHENTICATION сверяет выбранный и фактический режим хоста; должен быть OFFLINE. Наличие лицензии не устанавливается этим тестом.', 'Имена в OFFLINE не подтверждаются Microsoft. У старого открытого LAN может остаться ONLINE: перезапустить игры. Подробности — АВТОТЕСТЫ.html.'],
+    ['R2-SOLO', 'Один ПК, 1–3 минуты', 'Не требуется.', 'SkyCraft-Без-друга.exe → роль Без друга → DIRECT → код пустой → подписать условия → Начать автотест. Не двигаться. При падении отметить Ошибка, остановить и собрать отчёт.', 'Три закрытых порта / отказа / восстановления. Причина отказа, позиция, 5 секунд наблюдения, повторная доступность собственного сервера.', 'Внешний ZIP с одного ПК. Допуск неподвижной позиции 3 блока. Интернет и два игрока NOT_RUN.'],
+    ['R2-01', 'Radmin; прежний zapret ALT на хосте; Cloudflare/VPN off; клиент чистый', 'SkyCraft-Хост.exe → Хост / Общая виртуальная сеть / DIRECT → условия R2-01 HOST → Начать автотест → дождаться HOST_LOCAL_TCP → Копировать код хоста → передать весь новый SCY2.', 'SkyCraft-Клиент.exe → Клиент / Общая виртуальная сеть / DIRECT → вставить новый SCY2 → условия R2-01 CLIENT → Начать автотест. IP/чат вручную не нужны.', 'Radmin IPv4 первым; TCP отдельно от входа; ID/версия сервера; 180 с клиента, 240 с хоста; выход/позиция/повторный вход.', 'Оба внешних ZIP. При отказе клиента хост нажимает Остановить и собрать отчёт, не ждёт 20 минут.'],
+    ['R2-02', 'Контроль: Radmin включён; оба без zapret/Cloudflare/VPN', 'Завершить прошлый тест. Выставить условия. Новый прогон хоста и новый SCY2.', 'При необходимости /leave, остановиться. Новый код, сеть виртуальная, DIRECT. Подписать R2-02.', 'Сравнение с R2-01 при одном изменённом факторе.', 'Оба ZIP. Выполнять после успешного R2-01 либо анализа его отказа.'],
+    ['R2-03', 'Хост zapret ALT + Cloudflare трафик и DNS, ваш UDP-профиль; клиент чистый', 'Подключить настроенный Cloudflare через его интерфейс, записать профиль. Radmin оставить. Новый прогон/код.', 'Виртуальная сеть / DIRECT / новый код; в условиях записать фактический чистый режим.', 'winws-фильтры, WARP status/settings, маршруты до/после, TCP и игровой цикл.', 'Оба ZIP. Disconnected не считается подключённым Cloudflare.'],
+    ['R2-04', 'Сложная комбинация у клиента, чистый хост', 'Поменять роли и запустить нового хоста первым. Передать новый код.', 'Сложная комбинация zapret + Cloudflare у клиента; DIRECT, виртуальная сеть, новый код.', 'Отдельная проверка исходящего пути клиента.', 'Оба ZIP с R2-04 и режимами каждого ПК.'],
+    ['R2-05', 'На обоих zapret + Cloudflare + VPN-туннель; Radmin', 'Выставить свою комбинацию. Вписать название/режим VPN. Новый прогон/код.', 'То же; DIRECT следует маршрутам Windows, не отключает VPN.', 'Выбранный Windows маршрут к IP хоста, WARP, слушающие порты; игровой цикл.', 'Оба ZIP. Изменять условия внутри наблюдения не следует.'],
+    ['R2-06', 'VPN клиента в режиме системного прокси', 'Ранее успешные условия. Новый прогон/код.', 'Найти настоящий SOCKS5/HTTP-порт в своём VPN. Выбрать SOCKS5/HTTP_CONNECT, вписать 127.0.0.1:реальный_порт, виртуальная сеть, новый код. Не копировать примерный порт.', 'Прокси проверяется до адресов хоста, затем протокол/целевой доступ. PROXY_UNAVAILABLE отличается от TARGET_TCP_UNAVAILABLE.', 'Оба ZIP. Если реальный порт неизвестен, этот сценарий NOT_RUN; не угадывать 8080.'],
+    ['R2-07', 'Интернет без Radmin, если есть входящий путь', 'Заранее доступный входящий TCP 25565 или глобальный IPv6. Новый код. WARP/VPN egress не гарантирует доступ.', 'Сеть Разные сети / выбранный обоснованный транспорт / новый код. LAN и Radmin в этой строке не проверяются.', 'Только глобальные кандидаты, TCP/login отдельно, маршруты/причины.', 'Оба ZIP. Без входящего пути BLOCKED; ретранслятора в network.5 нет.'],
+    ['VISUAL', 'Во время парного наблюдения', '0–60 с HUD; 60–120 с движение; 120–180 с подтвердить появление/исчезновение блока. Отметить списки в помощнике.', 'То же. К концу 180 с остановиться: программа сама вернёт в свой мир и повторно подключит. Блока нет → Не проверено.', 'VISUAL_* сохраняются как оценки человека; TCP не подменяет их.', 'Работает / Ошибка / Не проверено на обоих. Не загружать другие сохранения во время автоматического восстановления.'],
+    ['END', 'После каждого прогона', 'Дождаться Готово: ZIP → Открыть отчёты. При отказе клиента остановить хост с отчётом.', 'То же. При успешном тесте остаётся у хоста; позднее T → /leave → Enter.', 'Сохранение отсчётов также при остановке/обрыве; exact trace текущего прогона.', 'Передать оба внешних ZIP из %LOCALAPPDATA%/SkyCraft/TestAssistant/reports; не только вложенный collector.zip.'],
+]
+
+def main():
+    directory=ROOT/'docs/testing'
+    path=directory/'SkyCraft-Network-Tests.xlsx'
+    book=workbook.load_workbook(path)
+    if 'Повтор network5' in book: del book['Повтор network5']
+    sheet=workbook.page(book,'Повтор network5',HEADERS,ROWS,[14,42,65,65,55,55],'AutomaticRetest5')
+    book.move_sheet(sheet,offset=-book.index(sheet)); book.active=0; book.save(path)
+    with (directory/'retest-steps.csv').open('w',encoding='utf-8-sig',newline='') as file:
+        writer=csv.writer(file,delimiter=';');writer.writerow(HEADERS);writer.writerows(ROWS)
+    table='<table><thead><tr>'+''.join('<th>'+html.escape(h)+'</th>' for h in HEADERS)+'</tr></thead><tbody>'
+    for row in ROWS:table+='<tr>'+''.join('<td>'+html.escape(c)+'</td>' for c in row)+'</tr>'
+    text='<!doctype html><html lang="ru"><meta charset="utf-8"><title>Второй прогон SkyCraft</title><style>body{font:16px/1.5 system-ui;margin:24px}table{border-collapse:collapse}th{background:#17324d;color:white;position:sticky;top:0}th,td{border:1px solid #b9cbdc;padding:12px;vertical-align:top;min-width:180px}tr:nth-child(even){background:#f0f5fa}</style><h1>Второй прогон network.5</h1><p>Полная инструкция: АВТОТЕСТЫ.html в корне комплекта. Таблица задаёт порядок; каждый парный прогон — новый код SCY2.</p>'+table+'</tbody></table></html>'
+    (directory/'ПОВТОР.html').write_text(text,encoding='utf-8')
+    check=workbook.load_workbook(path,read_only=True);assert check.active.title=='Повтор network5' and check.active.max_row==len(ROWS)+1
+    print(f'Retest table: {len(ROWS)} rows; workbook sheets {len(check.sheetnames)}')
+
+if __name__=='__main__':main()

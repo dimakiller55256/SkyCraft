@@ -21,17 +21,18 @@ def build(friend, output):
         names.update(name for name in z.namelist() if name.startswith('docs/'))
         names.add('ИГРОВЫЕ-ПРОВЕРКИ.html')
         if 'ИСПРАВЛЕНИЕ-ЗАГРУЗКИ.html' in z.namelist():names.add('ИСПРАВЛЕНИЕ-ЗАГРУЗКИ.html')
+        names.update(['КОНВЕРТАЦИЯ-ПРЕДМЕТОВ.html','ТАБЛИЦА-ПРЕДМЕТОВ.html','item-conversion-default.json'])
         if manifest['nativeDll']['changed']:names.add('native/SkyCraft.dll')
         entries={name:z.read(name) for name in names}
     manifest.pop('mo2Archive');manifest.pop('prismInstance')
     manifest['kind']='automatic-test-update';manifest['requiresExistingSkyCraft']=True
     entries['package-manifest.json']=(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode('utf-8')
     entries['НАЧАТЬ.txt']=(f'Обновление и автоматические тесты SkyCraft {manifest["version"]}, r{manifest["packageRevision"]}\r\n'
-        'DLL r6 отозвана: вылет при загрузке на AE. r10 включает исправления удара великана и ожидания геометрии из r9, а также полный журнал новой диагностики. Начните с ИГРОВЫЕ-ПРОВЕРКИ.html.\r\n'
+        'r11 добавляет конвертацию предметов. Начните с КОНВЕРТАЦИЯ-ПРЕДМЕТОВ.html и кнопки «Тест предметов без друга». Исправления AE, клавиш и щита сохранены.\r\n'
         '1. Распаковать весь ZIP вне Skyrim.\r\n'
         '2. Открыть ИГРОВЫЕ-ПРОВЕРКИ.html (актуальная инструкция).\r\n'
         '3. Выбрать SkyCraft-Хост.exe / SkyCraft-Клиент.exe / SkyCraft-Без-друга.exe.\r\n'
-        '4. При закрытых Skyrim/Minecraft нажать «Обновить мод»: нужен network.8 JAR и DLL на обоих ПК. Выберите установленную SkyCraft.dll в MO2 -> SkyCraft -> SKSE -> Plugins.\r\n'
+        '4. При закрытых Skyrim/Minecraft нажать «Обновить мод»: нужен network.9 JAR и DLL на обоих ПК. Выберите установленную SkyCraft.dll в MO2 -> SkyCraft -> SKSE -> Plugins.\r\n'
         '5. MO2/SKSE -> отдельное тестовое сохранение -> помощник -> «Игровой тест до остановки».\r\n'
         '6. Хост передаёт новый код SCY2 клиенту; в конце «Остановить и собрать отчёт» -> «Открыть отчёты».\r\n'
         'В маленьком комплекте нет полного MO2/Prism для новой установки; для неё нужен friend-kit.\r\n').encode('utf-8-sig')

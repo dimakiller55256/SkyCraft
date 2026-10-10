@@ -6,7 +6,7 @@ import java.util.Set;
 
 /** Small local, opt-in file protocol. No listener, shell, arbitrary path or remote commands. */
 public final class AssistantProtocol {
-	private static final Set<String> ACTIONS = Set.of("start", "host", "probe", "join", "leave", "transport", "configure", "restore", "stop");
+	private static final Set<String> ACTIONS = Set.of("start", "host", "probe", "join", "leave", "transport", "configure", "restore", "stop", "items-world", "items-profile");
 	private AssistantProtocol() { }
 	public static String session(JsonObject lease, Instant now) {
 		if (lease.get("schema").getAsInt() != 1) throw new IllegalArgumentException("schema");

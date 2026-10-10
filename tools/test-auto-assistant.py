@@ -58,6 +58,8 @@ function Move-Item {
         native=base/'MO2 test mod/SKSE/Plugins/SkyCraft.dll';native.parent.mkdir(parents=True)
         native.write_bytes(b'MZ'+b'original-native-fixture')
         original_native=native.read_bytes()
+        user_table=native.parent/'SkyCraft-items.json';user_table.write_text('{"enabled":false,"items":[]}',encoding='utf-8')
+        original_table=user_table.read_bytes()
         plan.write_text(json.dumps({'action':'install','game':str(game),'nativeDll':str(native)}),encoding='utf-8')
         run(command())
         installed=game/'mods'/manifest['fabricJar']['file'];assert hashlib.sha256(installed.read_bytes()).hexdigest()==manifest['fabricJar']['sha256']
@@ -76,14 +78,19 @@ function Move-Item {
             assert hashlib.sha256(installed.read_bytes()).hexdigest()==manifest['fabricJar']['sha256'],'JAR rollback failed'
             run(command())
         assert all((game/p).read_bytes()==value for p,value in before.items())
+        assert user_table.read_bytes()==original_table,'Update overwrote the custom item table'
         output=base/'reports with spaces'
         native_logs=base/'SKSE logs';native_logs.mkdir()
         (native_logs/'SkyCraft.log').write_text('SkyCraft synthetic crash stack and frame diagnostics',encoding='utf-8')
         (native_logs/'SkyCraft_crash.dmp').write_bytes(b'MDMP-local-fixture')
+        journals=native_logs/'SkyCraft-items';journals.mkdir()
+        journal=journals/'00000000-0000-0000-0000-000000000001.json'
+        journal.write_text('{"schema":1,"test":true,"transactions":[]}',encoding='utf-8')
         run(['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',kit/'tools/collect-network-report.ps1','-GameDirectory',game,'-RunId','GAMEPLAY_FIXTURE','-Role','Client','-OutputDirectory',output,'-SkseLog',native_logs/'SkyCraft.log','-IncludeGameplayDiagnostics'])
         with zipfile.ZipFile(next(output.glob('GAMEPLAY_FIXTURE-client-*.zip'))) as z:
             assert z.read('gameplay/SkyCraft_crash.dmp')==b'MDMP-local-fixture'
             assert z.read('gameplay/SkyCraft.log')==b'SkyCraft synthetic crash stack and frame diagnostics'
+            assert z.read('gameplay/item-journals/'+journal.name)==journal.read_bytes()
             assert SECRET.encode() not in z.read('gameplay/minecraft-gameplay.log')
             assert not any('accounts' in n or 'properties' in n for n in z.namelist())
             index=json.loads(z.read('gameplay-files.json').decode('utf-8-sig'));assert all(row['Copied'] for row in index)

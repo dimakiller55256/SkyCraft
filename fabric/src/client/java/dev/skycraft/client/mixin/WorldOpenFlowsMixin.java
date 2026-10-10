@@ -24,7 +24,7 @@ public abstract class WorldOpenFlowsMixin {
 	private void skycraft$skipBackupPrompt(
 		WorldOpenFlows self, LevelStorageSource.LevelStorageAccess access, boolean oldCustomized, Runnable proceed, Runnable cancel, Operation<Void> original
 	) {
-		if (SkyCraft.WORLD_NAME.equals(access.getLevelId())) {
+		if (SkyCraft.WORLD_NAME.equals(access.getLevelId()) || "SkyCraft-Items-Test".equals(access.getLevelId())) {
 			proceed.run();
 		} else {
 			original.call(self, access, oldCustomized, proceed, cancel);

@@ -5,7 +5,8 @@
 [таблица Excel](docs/testing/SkyCraft-Network-Tests.xlsx),
 [пакет для друга](docs/YS-FRIEND.md),
 [подробная инструкция HTML](docs/testing/ИНСТРУКЦИЯ.html),
-[диагностика закрытия Skyrim при запуске](docs/YS-STARTUP.md).
+[диагностика закрытия Skyrim при запуске](docs/YS-STARTUP.md),
+[конвертация предметов и одиночный тест](docs/YS-ITEMS.md).
 
 ![SkyCraft: a Minecraft player walking through Riverwood with the Minecraft HUD](docs/screenshot.jpg)
 

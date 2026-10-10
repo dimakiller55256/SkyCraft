@@ -13,7 +13,7 @@
 namespace skycraft::proto
 {
 	inline constexpr std::uint32_t kMagic = 0x43594B53;  // "SKYC"
-	inline constexpr std::uint32_t kVersion = 11;
+	inline constexpr std::uint32_t kVersion = 12;
 	inline constexpr wchar_t       kMappingName[] = L"Local\\SkyCraft_v1";
 
 	// 1 Minecraft block == 70 Skyrim units (Skyrim player ~128 units tall, MC player 1.8 blocks).
@@ -26,6 +26,8 @@ namespace skycraft::proto
 	inline constexpr std::uint64_t kOffOverlayCtl = 0x300;
 	inline constexpr std::uint64_t kOffOverlaySlotHdr = 0x340;  // 3 x 0x40
 	inline constexpr std::uint64_t kOffWaterGrid = 0x400;       // Skyrim -> MC, see WaterGrid
+	inline constexpr std::uint64_t kOffItemRequest = 0x900;
+	inline constexpr std::uint64_t kOffItemReply = 0xB00;
 	inline constexpr std::uint64_t kOffInputRing = 0x1000;
 	inline constexpr std::uint64_t kOffCollisionRing = 0x20000;
 	inline constexpr std::uint64_t kCollisionRingBytes = 32ull << 20;
@@ -52,6 +54,23 @@ namespace skycraft::proto
 		std::uint64_t mcHeartbeatMs;      // GetTickCount64() at last MC frame
 	};
 	static_assert(sizeof(Header) == 0x20);
+
+	// One durable native transaction at a time; seq is a seqlock, strings are UTF-8/NUL.
+	// action: 0 idle, 1 prepare, 2 commit, 3 local notice (count: 1 save required, 2 paused).
+	// status: 1 ready, 2 delivered, 3 rejected, 4 retry.
+	struct ItemRequest {
+		std::uint32_t seq, action, count, localForm;
+		char id[40], character[40], target[40], plugin[128], item[96];
+		std::uint8_t reserved[152];
+	};
+	struct ItemReply {
+		std::uint32_t seq, status;
+		char id[40], target[40], message[160];
+		std::uint32_t localControl;  // Local leased assistant only: 1 forks an isolated test profile.
+		std::uint32_t testWorld;     // Independent atomic publication: actual local item test world.
+	};
+	static_assert(sizeof(ItemRequest) == 0x200);
+	static_assert(sizeof(ItemReply) == 0x100);
 
 	// ---- Skyrim -> MC state @0x100 (seqlock: seq odd while writing) -------------------------
 	enum SkyFlags : std::uint32_t

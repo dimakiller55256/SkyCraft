@@ -84,6 +84,7 @@ public final class SkyClient {
 	/** Start of Minecraft.runTick: pull state and input from Skyrim before anything else runs. */
 	public static void beginFrame() {
 		SkyLink.poll();
+		ItemConversionClient.frame(Minecraft.getInstance());
 		quitWithSkyrim(Minecraft.getInstance());
 		if (START_HIDDEN && !startedHidden) {
 			startedHidden = true;

@@ -73,6 +73,38 @@ public final class SkyLink {
 	}
 
 	private static volatile MemorySegment shm;
+
+	public record ItemRequest(int action,int count,int localForm,String id,String character,String target,String plugin,String item) {}
+	public static ItemRequest readItemRequest() {
+		MemorySegment s=shm; if(s==null || !active())return null;
+		long o=OFF_ITEM_REQUEST;
+		for(int attempt=0;attempt<3;attempt++) {
+			int seq=(int)INT.getAcquire(s,o);if((seq&1)!=0)continue;
+			var r=new ItemRequest(s.get(JAVA_INT,o+4),s.get(JAVA_INT,o+8),s.get(JAVA_INT,o+12),itemText(s,o+16,40),itemText(s,o+56,40),itemText(s,o+96,40),itemText(s,o+136,128),itemText(s,o+264,96));
+			VarHandle.acquireFence();if(seq==(int)INT.getAcquire(s,o))return r;
+		}
+		return null;
+	}
+	private static String itemText(MemorySegment s,long o,int cap) {
+		byte[] bytes=s.asSlice(o,cap).toArray(JAVA_BYTE);int n=0;while(n<cap&&bytes[n]!=0)n++;
+		return new String(bytes,0,n,StandardCharsets.UTF_8);
+	}
+	public static void writeItemReply(String id,int status,String target,String message) {
+		writeItemReply(id,status,target,message,0);
+	}
+	public static void beginItemTestProfile(String id){writeItemReply(id,0,"","",1);}
+	public static void itemTestWorld(boolean test){MemorySegment s=shm;if(s!=null)INT.setRelease(s,OFF_ITEM_REPLY+252,test?1:0);}
+	private static void writeItemReply(String id,int status,String target,String message,int control) {
+		MemorySegment s=shm;if(s==null)return;long o=OFF_ITEM_REPLY;
+		int seq=(int)INT.get(s,o);INT.setRelease(s,o,(seq+1)|1);
+		s.set(JAVA_INT,o+4,status);itemText(s,o+8,40,id);itemText(s,o+48,40,target);itemText(s,o+88,160,message);
+		s.set(JAVA_INT,o+248,control);
+		VarHandle.releaseFence();INT.setRelease(s,o,((seq+1)|1)+1);
+	}
+	private static void itemText(MemorySegment s,long o,int cap,String text) {
+		s.asSlice(o,cap).fill((byte)0);byte[] bytes=text.getBytes(StandardCharsets.UTF_8);
+		MemorySegment.copy(bytes,0,s,JAVA_BYTE,o,Math.min(bytes.length,cap-1));
+	}
 	private static long lastOpenAttempt;
 	private static int skyrimPid;
 	private static volatile int generation;

@@ -24,6 +24,13 @@ public final class MirrorWorld {
 	private static boolean readConfiguredJoin = true;
 	// A friend's world for this session; null: our own.
 	private static @org.jspecify.annotations.Nullable String sessionJoin;
+	private static String localWorldName = SkyCraft.WORLD_NAME;
+	/** Session-only disposable item test world; ordinary SkyCraft save is left untouched. */
+	public static void itemTestWorld(Minecraft minecraft) {
+		sessionJoin=null;readConfiguredJoin=false;localWorldName="SkyCraft-Items-Test";
+		pendingNote="Тест предметов: открыт отдельный мир Minecraft. Используйте отдельное сохранение Skyrim. После теста закройте обе игры.";
+		leaveWorld(minecraft);
+	}
 	// Shown in chat once the player is in a world again (why they're back in their own, ...).
 	private static @org.jspecify.annotations.Nullable String pendingNote;
 
@@ -137,21 +144,21 @@ public final class MirrorWorld {
 			NetworkClient.connect(minecraft, title, dev.skycraft.network.Endpoint.parse(join));
 			return;
 		}
-		if (minecraft.getLevelSource().levelExists(SkyCraft.WORLD_NAME)) {
+		if (minecraft.getLevelSource().levelExists(localWorldName)) {
 			SkyCraft.LOG.info("SkyCraft: opening mirror world");
-			minecraft.createWorldOpenFlows().openWorld(SkyCraft.WORLD_NAME, () -> minecraft.gui.setScreen(title));
+			minecraft.createWorldOpenFlows().openWorld(localWorldName, () -> minecraft.gui.setScreen(title));
 			return;
 		}
 		SkyCraft.LOG.info("SkyCraft: creating mirror world");
 		LevelSettings settings = new LevelSettings(
-			SkyCraft.WORLD_NAME,
+			localWorldName,
 			GameType.SURVIVAL,
 			new LevelSettings.DifficultySettings(Difficulty.NORMAL, false, false),
 			true,
 			WorldDataConfiguration.DEFAULT
 		);
 		minecraft.createWorldOpenFlows().createFreshLevel(
-			SkyCraft.WORLD_NAME,
+			localWorldName,
 			settings,
 			new WorldOptions(0L, false, false),
 			registries -> registries.lookupOrThrow(Registries.WORLD_PRESET).getOrThrow(PRESET).value().createWorldDimensions(),

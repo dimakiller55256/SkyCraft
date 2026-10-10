@@ -32,6 +32,7 @@ final class GameplaySmoke {
     private volatile int combatStep,combatAt;
     private volatile String combatResult;
     private volatile boolean ownershipChecked;
+    private final ItemPacketSmoke itemPackets=new ItemPacketSmoke();
     void initialize(){ClientTickEvents.END_CLIENT_TICK.register(this::tick);}
     private void tick(Minecraft mc) {
         if(done)return;
@@ -110,6 +111,8 @@ final class GameplaySmoke {
                             var player=server.getPlayerList().getPlayers().stream().filter(p->p.getPlainTextName().equals("GameplayGuest")).findFirst().orElse(null);
                             if(player==null)return; // guest deliberately reconnects before the combat phase
                             if(combatStep==0){
+                                if(!Files.exists(peer.resolve("item-packet.txt")))return;
+                                ItemSmoke.check(player,server.getPlayerList().getPlayers().stream().filter(p->!p.getUUID().equals(player.getUUID())).findFirst().orElseThrow(),mc.gameDirectory.toPath().resolve("items.txt"));
                                 player.setGameMode(GameType.SURVIVAL);player.setHealth(20);player.setYRot(0);
                                 player.setItemSlot(net.minecraft.world.entity.EquipmentSlot.HEAD,new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_HELMET));
                                 player.setItemSlot(net.minecraft.world.entity.EquipmentSlot.CHEST,new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_CHESTPLATE));
@@ -134,7 +137,12 @@ final class GameplaySmoke {
                     if(combatResult!=null){if(!combatResult.equals("PASS"))throw new IllegalStateException(combatResult);step=5;}
                 }
                 case 5 -> {
-                    if(Files.exists(peer.resolve("smoke-result.txt")))finish(mc,"PASS: LAN menu; guest PLAY; DigOpen host/guest; chunk-load resync; shield/armor; NPC ownership and guest hit packet; real keyboard release");
+                    if(Files.exists(peer.resolve("smoke-result.txt"))){dev.skycraft.client.MirrorWorld.itemTestWorld(mc);step=7;}
+                }
+                case 7 -> {
+                    if(mc.level==null){dev.skycraft.client.MirrorWorld.openWhenReady(mc);return;}
+                    if(mc.getSingleplayerServer()==null||!mc.getSingleplayerServer().getWorldData().getLevelName().equals("SkyCraft-Items-Test"))return;
+                    finish(mc,"PASS: LAN menu; guest PLAY; DigOpen host/guest; chunk-load resync; shield/armor; NPC ownership and guest hit packet; real keyboard release; item conversion and durable overflow; item test world isolated");
                 }
             }
         }catch(Exception e){dev.skycraft.SkyCraft.LOG.error("Gameplay smoke failed",e);finish(mc,"FAIL: "+e);}
@@ -161,6 +169,7 @@ final class GameplaySmoke {
             if(mc.level==null||mc.player==null||mc.isLocalServer())return;
             if(mc.gui.screen()!=null)return; // A player/chunk exists before the join loading screen closes.
             if(!SkyDig.isDug(mc.level,0x3c,dug))return;
+            itemPackets.tick(mc);
             inputCheckOnce(mc);
             if(ticks++%2==0)ClientPlayNetworking.send(new dev.skycraft.net.ActorSync.Actors(java.util.List.of(new dev.skycraft.link.SkyLink.Actor(0x1234,0,(float)mc.player.getX()+1,(float)mc.player.getY(),(float)mc.player.getZ(),0,0.6f,1.8f,1,1,"Guest actor"))));
             if(dev.skycraft.client.ActorSyncClient.receivedHits>0)Files.writeString(mc.gameDirectory.toPath().resolve("actor-hit.txt"),"PASS: hit returned through owner clientbound packet");

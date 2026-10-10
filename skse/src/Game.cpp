@@ -2,6 +2,7 @@
 
 #include "Collision.h"
 #include "Dig.h"
+#include "Items.h"
 #include "Perf.h"
 
 namespace skycraft
@@ -663,6 +664,7 @@ namespace skycraft
 			st.mcGuiScale = haveMc ? static_cast<int>(mc.guiScale) : 0;
 			Input::SetActivatePromptKey(puppet);
 			Combat::PerFrame(a_player, puppet, a_delta);
+			Items::PerFrame(a_player);
 			WorldRender::UpdateRagdoll(a_player, haveMc && st.mcInWorld);
 			if (puppet) {
 				NpcBlocks::PushActorsOut(a_player, a_delta);

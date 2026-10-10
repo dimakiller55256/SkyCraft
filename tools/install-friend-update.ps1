@@ -19,6 +19,9 @@ $manifest = Get-SkyCraftPackageManifest
 $repoPath = Split-Path -Parent $PSScriptRoot
 $nativePath = $null
 $nativeTemporary = $null
+$tablePath = $null
+$tableTemporary = $null
+$tableNeeded = $false
 if ($manifest.nativeDll.changed) {
     $nativeSource = Join-Path $repoPath 'native\SkyCraft.dll'
     if ((Get-SkyCraftFileHash -LiteralPath $nativeSource).Hash -ne $manifest.nativeDll.sha256) { throw 'Новая SkyCraft.dll повреждена. Распакуйте весь комплект заново.' }
@@ -29,6 +32,14 @@ if ($manifest.nativeDll.changed) {
     $nativePath = (Resolve-Path -LiteralPath $NativeDll.Trim('"') -ErrorAction Stop).Path
     if ((Split-Path -Leaf $nativePath) -ne 'SkyCraft.dll' -or (Get-Item -LiteralPath $nativePath).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Выберите реальный файл SkyCraft.dll из установленного мода MO2.' }
     $nativeTemporary = $nativePath + '.installing-' + [Guid]::NewGuid().ToString('N')
+    if ($manifest.itemTable) {
+        if ($manifest.itemTable.file -ne 'item-conversion-default.json') { throw 'Unsafe item table filename.' }
+        $tableSource = Join-Path $repoPath $manifest.itemTable.file
+        if ((Get-SkyCraftFileHash -LiteralPath $tableSource).Hash -ne $manifest.itemTable.sha256) { throw 'Таблица предметов повреждена. Распакуйте комплект заново.' }
+        $tablePath = Join-Path (Split-Path -Parent $nativePath) 'SkyCraft-items.json'
+        $tableNeeded = -not (Test-Path -LiteralPath $tablePath)
+        if ($tableNeeded) { $tableTemporary = $tablePath + '.installing-' + [Guid]::NewGuid().ToString('N') }
+    }
 }
 $jarSource = Join-Path $repoPath $manifest.fabricJar.file
 if ($manifest.fabricJar.file -ne (Split-Path -Leaf $manifest.fabricJar.file)) { throw 'Unsafe JAR filename in manifest.' }
@@ -43,7 +54,7 @@ foreach ($file in Get-ChildItem -LiteralPath $modsPath -File -Filter '*.jar') {
     if ($metadata.id -in @('skycraft', 'e4mc')) { $oldFiles += $file }
 }
 if ((Test-Path -LiteralPath $destination) -and -not ($oldFiles | Where-Object FullName -eq $destination)) { throw 'Новое имя JAR занято другим файлом; изменения не выполнены.' }
-if ($oldFiles.Count -eq 1 -and $oldFiles[0].FullName -eq $destination -and (Get-SkyCraftFileHash -LiteralPath $destination).Hash -eq $manifest.fabricJar.sha256 -and (-not $nativePath -or (Get-SkyCraftFileHash -LiteralPath $nativePath).Hash -eq $manifest.nativeDll.sha256)) {
+if (-not $tableNeeded -and $oldFiles.Count -eq 1 -and $oldFiles[0].FullName -eq $destination -and (Get-SkyCraftFileHash -LiteralPath $destination).Hash -eq $manifest.fabricJar.sha256 -and (-not $nativePath -or (Get-SkyCraftFileHash -LiteralPath $nativePath).Hash -eq $manifest.nativeDll.sha256)) {
     Write-Host 'Эта сборка уже установлена; никаких изменений.'
     return
 }
@@ -54,12 +65,17 @@ $temporary = Join-Path $modsPath ($manifest.fabricJar.file + '.installing-' + [G
 $moved = New-Object 'System.Collections.Generic.List[object]'
 $installed = $false
 $nativeInstalled = $false
+$tableInstalled = $false
 try {
     Copy-Item -LiteralPath $jarSource -Destination $temporary
     if ((Get-SkyCraftFileHash -LiteralPath $temporary).Hash -ne $manifest.fabricJar.sha256) { throw 'Temporary JAR verification failed.' }
     if ($nativePath) {
         Copy-Item -LiteralPath $nativeSource -Destination $nativeTemporary
         if ((Get-SkyCraftFileHash -LiteralPath $nativeTemporary).Hash -ne $manifest.nativeDll.sha256) { throw 'Temporary DLL verification failed.' }
+    }
+    if ($tableNeeded) {
+        Copy-Item -LiteralPath $tableSource -Destination $tableTemporary
+        if ((Get-SkyCraftFileHash -LiteralPath $tableTemporary).Hash -ne $manifest.itemTable.sha256) { throw 'Temporary item table verification failed.' }
     }
     New-Item -ItemType Directory -Path $backupPath | Out-Null
     foreach ($file in $oldFiles) {
@@ -77,9 +93,14 @@ try {
     }
     Move-Item -LiteralPath $temporary -Destination $destination
     $installed = $true
-    [pscustomobject]@{Utc=[DateTime]::UtcNow.ToString('o'); Version=$manifest.version; Installed=$destination; Moved=@($moved.ToArray())} |
+    if ($tableNeeded -and -not (Test-Path -LiteralPath $tablePath)) {
+        Move-Item -LiteralPath $tableTemporary -Destination $tablePath
+        $tableInstalled = $true
+    }
+    [pscustomobject]@{Utc=[DateTime]::UtcNow.ToString('o'); Version=$manifest.version; Installed=$destination; ItemTableCreated=$tableInstalled; ItemTable=$tablePath; Moved=@($moved.ToArray())} |
         ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $backupPath 'installation.json') -Encoding UTF8
 } catch {
+    if ($tableInstalled -and (Test-Path -LiteralPath $tablePath)) { Remove-Item -LiteralPath $tablePath }
     if ($installed -and (Test-Path -LiteralPath $destination)) { Remove-Item -LiteralPath $destination }
     if ($nativeInstalled -and (Test-Path -LiteralPath $nativePath)) { Remove-Item -LiteralPath $nativePath }
     foreach ($item in $moved) { if (-not (Test-Path -LiteralPath $item.Original)) { Move-Item -LiteralPath $item.Backup -Destination $item.Original } }
@@ -87,6 +108,7 @@ try {
 } finally {
     if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary }
     if ($nativeTemporary -and (Test-Path -LiteralPath $nativeTemporary)) { Remove-Item -LiteralPath $nativeTemporary }
+    if ($tableTemporary -and (Test-Path -LiteralPath $tableTemporary)) { Remove-Item -LiteralPath $tableTemporary }
 }
 Write-Host "Установлен SkyCraft $($manifest.version). Старые SkyCraft/e4mc сохранены: $backupPath"
 Write-Host 'Fabric API, настройки, аккаунты и миры сохранены. Продолжите по файлу ИГРОВЫЕ-ПРОВЕРКИ.html в распакованном комплекте.'

@@ -295,6 +295,17 @@ if ($IncludeGameplayDiagnostics) {
     if (Test-Path -LiteralPath $nativeFolder) {
         $candidates += @(Get-ChildItem -LiteralPath $nativeFolder -File -Filter 'crash-*.log' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2 -ExpandProperty FullName)
     }
+    # Inventory journals stay local, and are included only in the opted-in gameplay report.
+    $itemJournal = Join-Path $nativeFolder 'SkyCraft-items'
+    if (Test-Path -LiteralPath $itemJournal -PathType Container) {
+        $itemOutput = Join-Path $diagnostics 'item-journals'
+        New-Item -ItemType Directory -Path $itemOutput -Force | Out-Null
+        foreach ($file in @(Get-ChildItem -LiteralPath $itemJournal -File -Filter '*.json' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 16)) {
+            if ($file.Length -le 8MB -and $file.LastWriteTimeUtc -ge [DateTime]::UtcNow.AddHours(-6)) {
+                Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $itemOutput $file.Name)
+            }
+        }
+    }
     foreach ($candidate in $candidates) {
         if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
         $file = Get-Item -LiteralPath $candidate

@@ -147,7 +147,7 @@ namespace SkyCraftTests {
         }
     }
     static class Assessment {
-        public static bool SessionMatches(Dictionary<string,object> peer,string runId) {return Data.Str(peer,"runId")==runId && Data.Str(peer,"version")=="0.1.2-ys.network.8";}
+        public static bool SessionMatches(Dictionary<string,object> peer,string runId) {return Data.Str(peer,"runId")==runId && Data.Str(peer,"version")=="0.1.2-ys.network.9";}
         public static double Distance(Dictionary<string,object> a,Dictionary<string,object> b) {
             double x=Convert.ToDouble(a["x"])-Convert.ToDouble(b["x"]),y=Convert.ToDouble(a["y"])-Convert.ToDouble(b["y"]),z=Convert.ToDouble(a["z"])-Convert.ToDouble(b["z"]);
             return Math.Sqrt(x*x+y*y+z*z);
@@ -155,13 +155,13 @@ namespace SkyCraftTests {
     }
     sealed class Invitation {
         public string RunId; public List<Dictionary<string,object>> Addresses; public DateTime Expires; public string Authentication="ONLINE";
-        public string Encode() { return "SCY2:"+Convert.ToBase64String(Encoding.UTF8.GetBytes(Data.Json(Data.Obj("schema",2,"version","0.1.2-ys.network.8","runId",RunId,"expiresUtc",Expires.ToString("o"),"addresses",Addresses,"authentication",Authentication)))); }
+        public string Encode() { return "SCY2:"+Convert.ToBase64String(Encoding.UTF8.GetBytes(Data.Json(Data.Obj("schema",2,"version","0.1.2-ys.network.9","runId",RunId,"expiresUtc",Expires.ToString("o"),"addresses",Addresses,"authentication",Authentication)))); }
         public static Invitation Decode(string text) {
             if(text.Length>12000 || !text.StartsWith("SCY2:")) throw new ArgumentException("Вставьте весь код хоста, начиная с SCY2:.");
             var d=Data.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(text.Substring(5).Trim())));
             string id=Data.Str(d,"runId");
             DateTime expiry=DateTime.Parse(Data.Str(d,"expiresUtc")).ToUniversalTime();
-            if(Data.Int(d,"schema")!=2 || Data.Str(d,"version")!="0.1.2-ys.network.8" || !Regex.IsMatch(id,"^[A-Za-z0-9_-]{1,64}$") || expiry<DateTime.UtcNow || expiry>DateTime.UtcNow.AddMinutes(31)) throw new ArgumentException("Код повреждён или устарел. Попросите новый код хоста.");
+            if(Data.Int(d,"schema")!=2 || Data.Str(d,"version")!="0.1.2-ys.network.9" || !Regex.IsMatch(id,"^[A-Za-z0-9_-]{1,64}$") || expiry<DateTime.UtcNow || expiry>DateTime.UtcNow.AddMinutes(31)) throw new ArgumentException("Код повреждён или устарел. Попросите новый код хоста.");
             string authentication=Data.Str(d,"authentication");
             if(authentication!="ONLINE" && authentication!="OFFLINE") throw new ArgumentException("В коде нет корректного режима входа. Попросите новый код хоста.");
             var rows=new List<Dictionary<string,object>>();
@@ -202,7 +202,7 @@ namespace SkyCraftTests {
                 }
                 await Task.Delay(250,token);
             }
-            throw new TimeoutException("Мод не ответил. Нужен SkyCraft network.8; игра должна работать, а сохранение — быть загружено.");
+            throw new TimeoutException("Мод не ответил. Нужен SkyCraft network.9; игра должна работать, а сохранение — быть загружено.");
         }
         public void Dispose() { disposed=true; heartbeat.Dispose(); try { var lease=Data.Read(Path.Combine(dir,"lease.json")); if(Data.Str(lease,"session")==session) File.Delete(Path.Combine(dir,"lease.json")); } catch { } }
     }
@@ -224,6 +224,7 @@ namespace SkyCraftTests {
         readonly CheckBox offlineProfiles=new CheckBox {Text="Хост: автономные профили (частная LAN/Radmin)",Checked=false,AutoSize=true};
         readonly Button start=new Button {Text="Начать автотест",AutoSize=true};
         readonly Button gameplay=new Button {Text="Игровой тест до остановки",AutoSize=true};
+        readonly Button itemsTest=new Button {Text="Тест предметов без друга",AutoSize=true};
         readonly Dictionary<string,ComboBox> gameplayChecks=new Dictionary<string,ComboBox>();
         readonly Button stop=new Button {Text="Остановить и собрать отчёт",AutoSize=true,Enabled=false};
         readonly Button copy=new Button {Text="Копировать код хоста",AutoSize=true};
@@ -256,18 +257,19 @@ namespace SkyCraftTests {
             var options=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill};
             foreach(var pair in new[]{new {Name="Роль:",Control=(Control)role},new {Name="Сеть:",Control=(Control)network},new {Name="Транспорт:",Control=(Control)mode},new {Name="Прокси:",Control=(Control)proxy}}) {options.Controls.Add(new Label {Text=pair.Name,AutoSize=true}); options.Controls.Add(pair.Control);} root.Controls.Add(options,0,3);
             var conditionRow=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill}; conditionRow.Controls.Add(publicIp); conditionRow.Controls.Add(offlineProfiles); conditionRow.Controls.Add(new Label {Text="Условия / имя теста:",AutoSize=true}); conditionRow.Controls.Add(conditions); root.Controls.Add(conditionRow,0,4); root.Controls.Add(invite,0,5);
-            var actions=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill}; foreach(var control in new Control[]{start,gameplay,stop,copy,update,open,saveRatings}) actions.Controls.Add(control); root.Controls.Add(actions,0,6);
+            var actions=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill}; foreach(var control in new Control[]{start,gameplay,itemsTest,stop,copy,update,open,saveRatings}) actions.Controls.Add(control); root.Controls.Add(actions,0,6);
             var visual=new FlowLayoutPanel {AutoSize=true,Dock=DockStyle.Fill};
             foreach(var pair in new[]{new {Name="HUD",Control=hud},new {Name="Движение",Control=movement},new {Name="Блоки у обоих",Control=blocks}}) {
                 var group=new FlowLayoutPanel {AutoSize=true,WrapContents=false,Margin=new Padding(0)};
                 group.Controls.Add(new Label {Text=pair.Name,AutoSize=true}); pair.Control.Items.AddRange(new object[]{"Не проверено","Работает","Ошибка"});pair.Control.SelectedIndex=0;group.Controls.Add(pair.Control);visual.Controls.Add(group);
             }
-            foreach(var pair in new[]{new {Id="DIG_SHARED",Name="Разрушение у обоих"},new {Id="DOOR",Name="Проход двери"},new {Id="INPUT",Name="Клавиши"},new {Id="HOST_FOCUS",Name="Alt+Tab хоста"},new {Id="COMBAT",Name="Щит/урон"},new {Id="KNOCKDOWN",Name="Сбит с ног"},new {Id="SURFACE",Name="Поверхность/провалы"}}) {
+            foreach(var pair in new[]{new {Id="DIG_SHARED",Name="Разрушение у обоих"},new {Id="DOOR",Name="Проход двери"},new {Id="INPUT",Name="Клавиши"},new {Id="HOST_FOCUS",Name="Alt+Tab хоста"},new {Id="COMBAT",Name="Щит/урон"},new {Id="KNOCKDOWN",Name="Сбит с ног"},new {Id="SURFACE",Name="Поверхность/провалы"},new {Id="ITEMS",Name="Конвертация"},new {Id="ITEM_OVERFLOW",Name="Предметы на полу"},new {Id="ITEM_RELOAD",Name="Предметы: загрузка"}}) {
                 var selector=new ComboBox {DropDownStyle=ComboBoxStyle.DropDownList,Width=115};selector.Items.AddRange(new object[]{"Не проверено","Работает","Ошибка"});selector.SelectedIndex=0;
                 gameplayChecks.Add(pair.Id,selector);var group=new FlowLayoutPanel {AutoSize=true,WrapContents=false,Margin=new Padding(0)};
                 group.Controls.Add(new Label {Text=pair.Name,AutoSize=true});group.Controls.Add(selector);visual.Controls.Add(group);
             }
             var gameplayHelp=new Button {Text="Игровая инструкция",AutoSize=true};gameplayHelp.Click+=(s,e)=>{string guide=Path.Combine(package,"ИГРОВЫЕ-ПРОВЕРКИ.html");if(File.Exists(guide))Process.Start(guide);};visual.Controls.Add(gameplayHelp);
+            var itemsHelp=new Button {Text="Предметы: инструкция",AutoSize=true};itemsHelp.Click+=(s,e)=>{string guide=Path.Combine(package,"КОНВЕРТАЦИЯ-ПРЕДМЕТОВ.html");if(File.Exists(guide))Process.Start(guide);};visual.Controls.Add(itemsHelp);
             var help=new Button {Text="Инструкция",AutoSize=true};help.Click+=(sender,e)=>{string file=Path.Combine(package,"АВТОТЕСТЫ.html");if(File.Exists(file))Process.Start(file);};visual.Controls.Add(help);root.Controls.Add(visual,0,7);
             visual.Controls.Add(new Label {Text="Что произошло (G04/G06 и т. п.):",AutoSize=true});visual.Controls.Add(observations);
             root.Controls.Add(output,0,8); root.Controls.Add(status,0,9);
@@ -278,6 +280,7 @@ namespace SkyCraftTests {
             start.Click+=async(s,e)=>await Run(); gameplay.Click+=async(s,e)=>await Run(true); stop.Click+=(s,e)=>{if(cancel!=null) cancel.Cancel();}; copy.Click+=(s,e)=>{if(invite.Text.StartsWith("SCY2:")) { Clipboard.SetText(invite.Text); Log("Код скопирован. Передайте его другу любым привычным способом."); }};
             open.Click+=(s,e)=>{string path=reportRoot==null?Path.Combine(Discovery.SettingsDir,"reports"):Path.GetDirectoryName(reportRoot); Directory.CreateDirectory(path); Process.Start(path);};
             update.Click+=async(s,e)=>await UpdateMod();
+            itemsTest.Click+=async(s,e)=>{role.SelectedIndex=2;publicIp.Checked=false;await Run(true,true);};
             saveRatings.Click+=(s,e)=>SaveRatings();
             foreach(var selector in new[]{hud,movement,blocks}.Concat(gameplayChecks.Values)) selector.SelectedIndexChanged+=(s,e)=>{if(!working && finalArchive!=null) SaveRatings();};
             FormClosing+=(s,e)=>{if(working) {e.Cancel=true; closing=true; cancel.Cancel(); Log("Завершаю тест и собираю отчёт перед закрытием…");}};
@@ -326,13 +329,13 @@ namespace SkyCraftTests {
                 }
             }
         }
-        async Task<Dictionary<string,object>> WaitWorld(string world,int seconds,CancellationToken token) {
+        async Task<Dictionary<string,object>> WaitWorld(string world,int seconds,CancellationToken token,string name=null) {
             var watch=Stopwatch.StartNew(); var samples=new List<Dictionary<string,object>>(); int waitNumber=++worldWaitNumber;
             try {
             while(watch.Elapsed.TotalSeconds<seconds) {
                 token.ThrowIfCancellationRequested(); var state=bridge.State();
                 samples.Add(state);
-                if(Data.Str(state,"world")==world && (world!="local" || Data.Bool(state,"positionReady") && Data.Bool(state,"skyrimLinked") && Data.Bool(state,"skyrimReady"))) return state;
+                if(Data.Str(state,"world")==world && (name==null || Data.Str(state,"mirrorWorldName")==name) && (world!="local" || Data.Bool(state,"positionReady") && Data.Bool(state,"skyrimLinked") && Data.Bool(state,"skyrimReady"))) return state;
                 if(world=="remote" && Data.Str(state,"world")=="local" && Data.Int(Data.Sub(state,"lastFailure"),"request")==pendingJoinRequest && pendingJoinRequest>0)
                     throw new IOException("TCP был доступен; Minecraft отказал на этапе "+Data.Str(Data.Sub(state,"lastFailure"),"phase")+": "+Data.Str(Data.Sub(state,"lastFailure"),"reason"));
                 status.Text="Ожидаю мир «"+world+"» и готовность. Alt+Tab в Skyrim, не двигайтесь; помощник продолжит автоматически.";
@@ -342,22 +345,22 @@ namespace SkyCraftTests {
             } finally {if(reportRoot!=null)Data.Atomic(Path.Combine(reportRoot,"WORLD_WAIT_"+waitNumber+".json"),Data.Obj("world",world,"elapsedSeconds",watch.Elapsed.TotalSeconds,"samples",samples));}
         }
         async Task Ready(CancellationToken token) {
-            Log("Ожидаю SkyCraft network.8 и загруженное тестовое сохранение (до 10 минут)…");
+            Log("Ожидаю SkyCraft network.9 и загруженное тестовое сохранение (до 10 минут)…");
             var watch=Stopwatch.StartNew();
             while(watch.Elapsed.TotalSeconds<600) {
                 token.ThrowIfCancellationRequested(); var state=bridge.State();
                 if(Data.Str(state,"world")!="none" && state.Count>0 && Data.Bool(state,"skyrimReady") && Data.Bool(state,"positionReady")) return;
                 await Task.Delay(500,token);
             }
-            throw new TimeoutException("Нет связи с Skyrim. Проверьте версию network.8, загрузку тестового сохранения и папку Minecraft.");
+            throw new TimeoutException("Нет связи с Skyrim. Проверьте версию network.9, загрузку тестового сохранения и папку Minecraft.");
         }
-        async Task Run(bool gameplayMode=false) {
+        async Task Run(bool gameplayMode=false,bool itemWorld=false) {
             if(working) return;
             gameplayRun=gameplayMode;
             try {
                 gamePath=Path.GetFullPath(game.Text.Trim().Trim('"'));
                 if(!Discovery.ValidGame(gamePath)) throw new ArgumentException("Не найдена папка Minecraft со SkyCraft JAR. В Prism: экземпляр → Папка Minecraft.");
-                if(Discovery.SkyVersion(gamePath)!="0.1.2-ys.network.8") throw new IOException("Для помощника нужен SkyCraft network.8. Закройте Skyrim и Minecraft, нажмите «Обновить мод», затем запустите игру снова.");
+                if(Discovery.SkyVersion(gamePath)!="0.1.2-ys.network.9") throw new IOException("Для помощника нужен SkyCraft network.9. Закройте Skyrim и Minecraft, нажмите «Обновить мод», затем запустите игру снова.");
                 skyrimPath=skyrim.Text.Trim().Trim('"'); modsPath=Directory.Exists(mods.Text.Trim())?Path.GetFullPath(mods.Text.Trim()):"NOT_FOUND";
                 roleName=role.SelectedIndex==0?"host":"client"; networkKind=network.SelectedIndex; networkLabel=role.SelectedIndex==2?"Loopback":networkKind>0?"LAN":"Internet";
                 selectedMode=mode.SelectedIndex==0?"CURRENT":Convert.ToString(mode.SelectedItem); proxyText=proxy.Text.Trim();
@@ -369,7 +372,7 @@ namespace SkyCraftTests {
                 started=DateTime.UtcNow; finalArchive=null; observations.Clear(); checks.Clear(); pendingJoinRequest=0; worldWaitNumber=0; target=""; hud.SelectedIndex=movement.SelectedIndex=blocks.SelectedIndex=0; traceName="";
                 reportRoot=Path.Combine(Discovery.SettingsDir,"reports",runId+"-"+roleName+"-"+Guid.NewGuid().ToString("N").Substring(0,6)); Directory.CreateDirectory(reportRoot);
                 Data.Atomic(Path.Combine(Discovery.SettingsDir,"preferences.json"),Data.Obj("game",gamePath,"skyrim",skyrimPath,"mods",modsPath));
-                working=true; start.Enabled=false; gameplay.Enabled=false; stop.Enabled=true; update.Enabled=false; saveRatings.Enabled=false;
+                working=true; start.Enabled=false; gameplay.Enabled=false; itemsTest.Enabled=false; stop.Enabled=true; update.Enabled=false; saveRatings.Enabled=false;
                 foreach(var selector in gameplayChecks.Values)selector.SelectedIndex=0;
                 foreach(Control c in new Control[]{game,role,network,mode,proxy,skyrim,mods,conditions,publicIp,offlineProfiles}) c.Enabled=false;
                 invite.ReadOnly=true;
@@ -379,6 +382,13 @@ namespace SkyCraftTests {
                 Check("ADDRESS_DISCOVERY",addresses.Count>0?"PASS":"PARTIAL","Найдено адресов: "+addresses.Count+"; внешний IP: "+(Data.Str(observed,"ip")==""?"не определён":Data.Str(observed,"ip"))+".");
                 await Ready(token);
                 var startReply=await bridge.Send("start",Data.Obj("runId",runId,"role",roleName),token); traceName=Data.Str(startReply,"traceFile");
+                if(itemWorld){
+                    await bridge.Send("items-world",null,token);await Task.Delay(1000,token);await WaitWorld("local",90,token,"SkyCraft-Items-Test");
+                    var profile=await bridge.Send("items-profile",null,token);string control=Data.Str(Data.Sub(profile,"detail"),"control");var watch=Stopwatch.StartNew();bool confirmed=false;
+                    while(watch.Elapsed.TotalSeconds<30){token.ThrowIfCancellationRequested();var exchange=Data.Sub(bridge.State(),"itemExchange");if(Data.Int(exchange,"action")==3&&Data.Int(exchange,"count")==1&&Data.Str(exchange,"id")==control){confirmed=true;break;}status.Text="Вернитесь Alt+Tab в Skyrim: ожидаю отдельный тестовый профиль.";await Task.Delay(300,token);}
+                    if(!confirmed)throw new IOException("Skyrim не подтвердил тестовый профиль. Предметы не подбирайте; соберите отчёт.");
+                    Check("ITEM_TEST_WORLD","PASS","Minecraft и Skyrim подтвердили отдельный тестовый мир/журнал. Создайте НОВОЕ тестовое сохранение Skyrim через меню. После обмена сохраняйтесь; в конце закройте обе игры.");
+                }
                 if(role.SelectedIndex!=1) selectedMode="DIRECT";
                 if(selectedMode!="CURRENT") await bridge.Send("configure",Data.Obj("mode",selectedMode,"proxy",proxyText),token);
                 Data.Atomic(Path.Combine(reportRoot,"initial-state.json"),bridge.State());
@@ -408,7 +418,7 @@ namespace SkyCraftTests {
                 }
                 if(bridge!=null) { try { if(bridge.State().Count>0) {await bridge.Send("stop",null,CancellationToken.None); await Task.Delay(2200);} } catch { } bridge.Dispose(); bridge=null; }
                 if(working) { try { await Report(); } catch(Exception e) { Log("Сбор отчёта неполный: "+e.Message+". Данные остались в "+reportRoot); } }
-                working=false; start.Enabled=true; gameplay.Enabled=true; stop.Enabled=false; update.Enabled=true; saveRatings.Enabled=finalArchive!=null; if(cancel!=null) cancel.Dispose();
+                working=false; start.Enabled=true; gameplay.Enabled=true; itemsTest.Enabled=true; stop.Enabled=false; update.Enabled=true; saveRatings.Enabled=finalArchive!=null; if(cancel!=null) cancel.Dispose();
                 foreach(Control c in new Control[]{game,role,network,mode,proxy,skyrim,mods,conditions,publicIp}) c.Enabled=true;
                 invite.ReadOnly=false; proxy.Enabled=mode.SelectedIndex>=2;
                 offlineProfiles.Enabled=role.SelectedIndex==0;
@@ -469,8 +479,8 @@ namespace SkyCraftTests {
                 }
                 await Task.Delay(250,token);
             }
-            Check("PEER_SESSION","FAIL","Сервер не прислал метаданные SkyCraft network.8.");
-            throw new IOException("PEER_VERSION_UNKNOWN: проверьте network.8 на хосте и запущенный помощник.");
+            Check("PEER_SESSION","FAIL","Сервер не прислал метаданные SkyCraft network.9.");
+            throw new IOException("PEER_VERSION_UNKNOWN: проверьте network.9 на хосте и запущенный помощник.");
         }
         async Task Snapshot(string stage) {
             string plan=Path.Combine(reportRoot,"environment-"+stage+"-plan.json");
@@ -685,7 +695,7 @@ namespace SkyCraftTests {
                 if(Assessment.Distance(away,atOrigin)<380 || Assessment.Distance(atOrigin,atOrigin)!=0)throw new Exception("Position reset classification");checks.Add("POSITION_RESET_DETECTED_LEGITIMATE_ORIGIN_ALLOWED PASS");
                 var packet=Data.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(copy.Encode().Substring(5))));packet["version"]="0.1.2-ys.network.3";
                 rejected=false;try{Invitation.Decode("SCY2:"+Convert.ToBase64String(Encoding.UTF8.GetBytes(Data.Json(packet))));}catch{rejected=true;}if(!rejected)throw new Exception("Old version invite");checks.Add("OLD_VERSION_INVITATION_REJECTED PASS");
-                if(!Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.8"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","OLD","version","0.1.2-ys.network.8"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.3"),"TEST"))throw new Exception("Peer session matching");checks.Add("PEER_SESSION_AND_VERSION_MATCHING PASS");
+                if(!Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.9"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","OLD","version","0.1.2-ys.network.9"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.3"),"TEST"))throw new Exception("Peer session matching");checks.Add("PEER_SESSION_AND_VERSION_MATCHING PASS");
                 // Creating a WinForms control installs a UI SynchronizationContext. Run this
                 // last, after IPC awaits; a self-test has no message loop to service that context.
                 HelperForm.RatingsSelfTest(folder);checks.Add("POST_STOP_RATINGS_UPDATE_ZIP_AND_CORRECTION PASS");

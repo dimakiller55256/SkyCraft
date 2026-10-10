@@ -122,6 +122,11 @@ public final class TestAssistant {
 				detail = Map.of("joinRequest", MirrorWorld.joinRequest());
 			}
 			case "leave" -> MirrorWorld.leaveFriend(mc);
+			case "items-world" -> MirrorWorld.itemTestWorld(mc);
+			case "items-profile" -> {
+				if(mc.getSingleplayerServer()==null||!mc.getSingleplayerServer().getWorldData().getLevelName().equals("SkyCraft-Items-Test")||!SkyClient.positionReady())throw new IllegalStateException("ready local item test world required");
+				String control=java.util.UUID.randomUUID().toString();SkyLink.beginItemTestProfile(control);detail=Map.of("control",control);
+			}
 			case "configure" -> {
 				var props = new java.util.Properties();
 				props.setProperty("network.mode", request.get("mode").getAsString());
@@ -215,6 +220,9 @@ public final class TestAssistant {
 		data.put("skyrimLinked", SkyLink.active());
 		data.put("skyrimReady", SkyClient.tookOver() && SkyClient.sky().inGame() && !SkyClient.sky().loading());
 		var server = mc.getSingleplayerServer();
+		data.put("mirrorWorldName",server==null?"":server.getWorldData().getLevelName());
+		var exchange=SkyLink.readItemRequest();
+		if(exchange!=null)data.put("itemExchange",Map.of("action",exchange.action(),"id",exchange.id(),"count",exchange.count(),"item",exchange.item()));
 		data.put("published", server != null && server.isPublished());
 		if (server != null) data.put("hostAuthentication", server.usesAuthentication() ? "ONLINE" : "OFFLINE");
 		data.put("movementInput", Map.of("forward", mc.options.keyUp.isDown(), "back", mc.options.keyDown.isDown(),

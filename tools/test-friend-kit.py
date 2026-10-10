@@ -81,12 +81,17 @@ def test(archive,skyrim_directory):
             return json.loads((path/'installation.json').read_text(encoding='utf-8-sig'))
         facts=preflight();assert any(c['Id']=='skycraft_version' and c['Status']=='FAIL' for c in facts['Checks'])
         install=kit/'tools/install-friend-update.ps1'
-        run(install,'-GameDirectory',game)
+        native_file=base/'MO2 mod/SKSE/Plugins/SkyCraft.dll';native_file.parent.mkdir(parents=True);native_file.write_bytes(b'MZ-native-fixture-before-update')
+        install_args=['-GameDirectory',game,'-NativeDll',native_file]
+        run(install,*install_args)
+        assert hashlib.sha256(native_file.read_bytes()).hexdigest()==manifest['nativeDll']['sha256']
+        table_file=native_file.parent/'SkyCraft-items.json'
+        assert table_file.read_bytes()==(kit/'item-conversion-default.json').read_bytes(),'Default table not installed beside the selected DLL'
         destination=game/'mods'/manifest['fabricJar']['file']
         assert hashlib.sha256(destination.read_bytes()).hexdigest()==manifest['fabricJar']['sha256']
         assert not old.exists() and not e4mc.exists()
         backups=list((game.parent/'SkyCraft-YS-backups').glob('*/installation.json'));assert len(backups)==1
-        run(install,'-GameDirectory',game);assert len(list((game.parent/'SkyCraft-YS-backups').glob('*/installation.json')))==1,'Reinstall should be a no-op'
+        run(install,*install_args);assert len(list((game.parent/'SkyCraft-YS-backups').glob('*/installation.json')))==1,'Reinstall should be a no-op'
         facts=preflight();assert all(c['Status']=='PASS' for c in facts['Checks'] if c['Id'] in ('skycraft_version','e4mc','fabric_api','minecraft','fabric_loader'))
         duplicate=game/'mods/renamed-duplicate.jar';duplicate.write_bytes(fake_mod('skycraft','old'))
         facts=preflight();assert any(c['Id']=='skycraft_count' and c['Status']=='FAIL' for c in facts['Checks']);duplicate.unlink()
@@ -95,11 +100,11 @@ def test(archive,skyrim_directory):
         destination.unlink();a=game/'mods/a-e4mc.jar';b=game/'mods/b-skycraft.jar'
         a.write_bytes(fake_mod('e4mc','old'));b.write_bytes(fake_mod('skycraft','old'));before={p.name:p.read_bytes() for p in (a,b)}
         kernel,handle=locked_file(b)
-        try:run(install,'-GameDirectory',game,ok=False)
+        try:run(install,*install_args,ok=False)
         finally:kernel.CloseHandle(handle)
         assert not destination.exists()
         assert all((game/'mods'/name).read_bytes()==data for name,data in before.items()),'Rollback must restore every moved JAR'
-        run(install,'-GameDirectory',game)
+        run(install,*install_args)
         events=[{'schema':1,'utc':'2026-10-03T12:00:00Z','run_id':'AUTO','role':'auto','event':'sample','skyrim_linked':True},{'schema':1,'utc':'2026-10-03T12:00:01Z','run_id':'AUTO','role':'auto','event':'trace_closed','dropped_events':0}]
         trace=game/'logs/skycraft-network/AUTO-auto-fixture.jsonl';trace.write_text('\n'.join(json.dumps(e) for e in events)+'\n')
         native_log=base/'SkyCraft.log';native_log.write_text('[12:00] SkyCraft 0.1.2 loading (runtime 1-7-104-0)\nshared memory Local\\SkyCraft_v1 (created)\ngame hooks installed\nreceived Minecraft texture atlas\nMinecraft now drives camera rotation\n'+SECRET,encoding='utf-8')

@@ -13,7 +13,7 @@ import subprocess
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_REVISION = 10
+PACKAGE_REVISION = 11
 UPSTREAM_SHA256 = '1133ecde384d70d5261cbc9ba149bc7b544e1653b78846a1623b56241bb392c3'
 NATIVE_SHA256 = '72b0d231f4632cf2268514eece90e9b7adaa2b59c648fcf14aaf55a6513eefa3'
 API_SHA512 = 'ed6b2586d6fde11fde8472f5a527c51e99b67026e46f94d4bfd85e7e28ce5ee299173ee16ad576ceb51f39f98d30a811086a6deb1a86a524859cc16e12da109d'
@@ -39,7 +39,7 @@ def build(output, native_dll=None):
     properties=(ROOT/'fabric/gradle.properties').read_text()
     version=re.search(r'^version=(.+)$',properties,re.M).group(1).strip()
     if not re.fullmatch(r'[A-Za-z0-9._-]+',version): raise ValueError('Invalid version')
-    if version=='0.1.2-ys.network.8' and native_dll is None:raise ValueError('network.8 requires the built native DLL; pass --native-dll')
+    if version in ('0.1.2-ys.network.8','0.1.2-ys.network.9') and native_dll is None:raise ValueError('This protocol requires the built native DLL; pass --native-dll')
     upstream=ROOT/'.tools/friend-package/cache/SkyCraft-0.1.2.zip'
     data=upstream.read_bytes()
     if sha(data)!=UPSTREAM_SHA256: raise ValueError('Official upstream ZIP checksum mismatch')
@@ -70,6 +70,7 @@ def build(output, native_dll=None):
     native_entries={
         'SKSE/Plugins/SkyCraft.dll':dll,
         'SKSE/Plugins/SkyCraft.ini':(ROOT/'skse/SkyCraft.ini').read_bytes(),
+        'SKSE/Plugins/SkyCraft-items.json':(ROOT/'config/item-conversion.json').read_bytes(),
         'SKSE/Plugins/SkyCraft/SkyCraft-Minecraft.zip':zip_bytes(bundle_entries),
         'SKSE/Plugins/SkyCraft/LICENSE.txt':(ROOT/'LICENSE').read_bytes(),
         'SKSE/Plugins/SkyCraft/THIRD-PARTY-NOTICES.md':(ROOT/'THIRD-PARTY-NOTICES.md').read_bytes(),
@@ -87,11 +88,12 @@ def build(output, native_dll=None):
         'sourceCommit':subprocess.check_output(['git','-c',f'safe.directory={ROOT}','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
         'upstream':{'url':'https://github.com/chasmlol/SkyCraft/releases/tag/v0.1.2','zipSha256':UPSTREAM_SHA256},
         'fabricJar':{'file':jar_name,'sha256':sha(jar)},
+        'itemTable':{'file':'item-conversion-default.json','sha256':sha((ROOT/'config/item-conversion.json').read_bytes())},
         'nativeDll':{'version':f'{version}-r{PACKAGE_REVISION}' if native_dll else '0.1.2','file':'native/SkyCraft.dll','sha256':sha(dll),'changed':native_dll is not None,'upstreamSha256':NATIVE_SHA256},
         'mo2Archive':{'file':mod_name,'sha256':sha(mod_zip)},
         'prismInstance':{'file':instance_name,'sha256':sha(instance_zip)},
         'requirements':{'skyrimRuntime':'1.7.104.0','skse':'2.3.1','skseRuntimeDll':'skse64_1_7_104.dll','addressLibrary':'versionlib-1-7-104-0.bin','minecraft':'26.3','fabricLoader':'0.19.5','fabricApi':'0.161.0+26.3','java':25},
-        'verification':'network.8-r10: early physical hit classification, front shield stagger guard, collision readiness and shallow terrain penetration recovery, takeover hold and detailed collision/combat telemetry. Includes previous owner, input and AE fixes. See release report for automated checks; native gameplay and two-PC acceptance remain separate.' if native_dll else 'Upstream native DLL verified by hash; gameplay acceptance remains required.'
+        'verification':'network.9-r11: table-driven item exchange, durable owner receipts and overflow outbox, SKSE checkpoints and rollback quarantine, isolated item test world/profile. Previous AE, input, shield and geometry changes retained. See YS-ITEMS-VALIDATION.md; actual Skyrim pickup and two-PC acceptance remain separate.' if native_dll else 'Upstream native DLL verified by hash; gameplay acceptance remains required.'
     }
     entries={jar_name:jar,mod_name:mod_zip,instance_name:instance_zip,'package-manifest.json':(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode(),'LICENSE.txt':(ROOT/'LICENSE').read_bytes(),'THIRD-PARTY-NOTICES.md':(ROOT/'THIRD-PARTY-NOTICES.md').read_bytes()}
     if native_dll:entries['native/SkyCraft.dll']=dll
@@ -117,11 +119,16 @@ def build(output, native_dll=None):
     entries['docs/YS-NETWORK6-VALIDATION.md']=(ROOT/'docs/YS-NETWORK6-VALIDATION.md').read_bytes()
     entries['docs/YS-NETWORK7-VALIDATION.md']=(ROOT/'docs/YS-NETWORK7-VALIDATION.md').read_bytes()
     entries['docs/YS-NETWORK8-VALIDATION.md']=(ROOT/'docs/YS-NETWORK8-VALIDATION.md').read_bytes()
+    entries['docs/YS-ITEMS.md']=(ROOT/'docs/YS-ITEMS.md').read_bytes()
+    entries['docs/YS-ITEMS-VALIDATION.md']=(ROOT/'docs/YS-ITEMS-VALIDATION.md').read_bytes()
+    entries['КОНВЕРТАЦИЯ-ПРЕДМЕТОВ.html']=guide_html('YS-ITEMS.md')
+    entries['ТАБЛИЦА-ПРЕДМЕТОВ.html']=item_table_html()
+    entries['item-conversion-default.json']=(ROOT/'config/item-conversion.json').read_bytes()
     wrappers={'Установить обновление.cmd':'install-friend-update.ps1','Проверить сборку.cmd':'check-friend-installation.ps1','Собрать отчёт.cmd':'collect-friend-report.ps1','Адреса хоста.cmd':'show-host-addresses.ps1','Наблюдать запуск.cmd':'capture-skyrim-startup.ps1'}
     for label,script in wrappers.items():
         entries[label]=('@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\\'+script+'" %*\r\nif errorlevel 1 echo Failed. Read the message above.\r\npause\r\n').encode('ascii')
     entries['НАЧАТЬ.txt']=(f'SkyCraft {version}, комплект r{PACKAGE_REVISION} — обновление ОБЕИХ частей\r\n'
-        'DLL r6 отозвана: вылет при загрузке на AE. r10 включает исправления удара великана и ожидания геометрии из r9, а также полный журнал новой диагностики. Начните с ИГРОВЫЕ-ПРОВЕРКИ.html.\r\n'
+        'r11 добавляет конвертацию предметов. Начните с КОНВЕРТАЦИЯ-ПРЕДМЕТОВ.html и кнопки «Тест предметов без друга». Исправления AE, клавиш и щита сохранены.\r\n'
         '1. Распакуйте весь ZIP вне папки Skyrim.\r\n2. Откройте ИГРОВЫЕ-ПРОВЕРКИ.html: это актуальная инструкция к этой версии.\r\n'
         '3. Закройте Skyrim/Minecraft. Запустите помощник и нажмите «Обновить мод».\r\n'
         '4. При запросе выберите установленную SkyCraft.dll: MO2 -> правой кнопкой по SkyCraft -> Открыть в проводнике -> SKSE -> Plugins.\r\n'
@@ -143,13 +150,34 @@ def build(output, native_dll=None):
 def autotest_html():
     return guide_html('YS-RETEST.md')
 
+def item_table_html():
+    import html
+    data=json.loads((ROOT/'config/item-conversion.json').read_text(encoding='utf-8'))
+    rows=[]
+    for row in data['items']:
+        cells=[row['category'],row['editor'],row['plugin'],row['form'],row['minecraft'],str(row['count'])]
+        rows.append('<tr>'+''.join('<td>'+html.escape(cell)+'</td>' for cell in cells)+'</tr>')
+    return ('''<!doctype html><html lang="ru"><meta charset="utf-8"><title>Таблица обмена SkyCraft</title>
+<style>body{font:16px/1.5 system-ui;margin:24px;color:#17324d}input{font:inherit;padding:10px;width:min(90%,700px)}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{padding:8px;border:1px solid #cbd5e1;text-align:left}th{position:sticky;top:0;background:#e2e8f0}tr:nth-child(even){background:#f8fafc}code{background:#edf2f7}</style>
+<h1>Таблица конвертации предметов</h1><p>''' + str(len(rows)) + ''' соответствий. Поиск по любому столбцу. Количество — на один предмет Skyrim. Аналоги приближены; правила защиты описаны в <a href="КОНВЕРТАЦИЯ-ПРЕДМЕТОВ.html">инструкции</a>.</p>
+<p>Рабочий файл: установленный мод SkyCraft → <code>SKSE\\Plugins\\SkyCraft-items.json</code>. Эта страница показывает таблицу комплекта, а не ваши последующие изменения.</p>
+<input id="search" placeholder="Например: OreIron, еда, броня, HearthFires" aria-label="Поиск"><span id="count"></span>
+<table><thead><tr><th>Категория / замена</th><th>Предмет Skyrim (EditorID)</th><th>Файл Skyrim</th><th>Локальный FormID</th><th>Предмет Minecraft</th><th>Количество</th></tr></thead><tbody>''' + ''.join(rows) + '''</tbody></table>
+<script>const rows=Array.from(document.querySelectorAll('tbody tr'));function search(){const q=document.getElementById('search').value.toLocaleLowerCase();let n=0;for(const row of rows){row.hidden=!row.textContent.toLocaleLowerCase().includes(q);if(!row.hidden)n++;}document.getElementById('count').textContent=' Показано: '+n;}document.getElementById('search').addEventListener('input',search);search();</script></html>''').encode('utf-8')
+
 def guide_html(document):
     import html
     import re
     source=(ROOT/'docs'/document).read_text(encoding='utf-8')
     # Standalone UTF-8 guide, readable offline without a Markdown editor.
-    lines=[]
+    lines=[]; in_table=False
     for line in source.splitlines():
+        if line.startswith('|'):
+            if re.fullmatch(r'[| :\-]+',line):continue
+            if not in_table:lines.append('<table>');in_table=True
+            cells=line.strip('|').split('|')
+            lines.append('<tr>'+''.join('<td>'+re.sub(r'`(.+?)`',r'<code>\1</code>',html.escape(cell.strip()))+'</td>' for cell in cells)+'</tr>');continue
+        if in_table:lines.append('</table>');in_table=False
         escaped=html.escape(line)
         if line.startswith('# '):lines.append('<h1>'+escaped[2:]+'</h1>')
         elif line.startswith('## '):lines.append('<h2>'+escaped[3:]+'</h2>')
@@ -158,7 +186,8 @@ def guide_html(document):
             escaped=re.sub(r'`(.+?)`',r'<code>\1</code>',escaped)
             escaped=re.sub(r'\[([^\]]+)\]\((https://[^\s)]+)\)',r'<a href="\2">\1</a>',escaped)
             lines.append('<div>'+escaped+'</div>' if line else '<br>')
-    return ('<!doctype html><html lang="ru"><meta charset="utf-8"><title>Автотесты SkyCraft</title><style>body{max-width:1000px;margin:40px auto;padding:0 24px;font:18px/1.55 system-ui;color:#213547}h1,h2{color:#17324d}code{background:#edf2f7;padding:2px 5px}</style>'+''.join(lines)+'</html>').encode('utf-8')
+    if in_table:lines.append('</table>')
+    return ('<!doctype html><html lang="ru"><meta charset="utf-8"><title>Автотесты SkyCraft</title><style>body{max-width:1000px;margin:40px auto;padding:0 24px;font:18px/1.55 system-ui;color:#213547}h1,h2{color:#17324d}code{background:#edf2f7;padding:2px 5px}table{border-collapse:collapse;width:100%;margin:20px 0}td{border:1px solid #cbd5e1;padding:8px}tr:first-child{background:#edf2f7;font-weight:bold}</style>'+''.join(lines)+'</html>').encode('utf-8')
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)

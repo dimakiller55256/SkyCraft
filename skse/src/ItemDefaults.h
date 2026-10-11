@@ -4554,6 +4554,309 @@ R"SKYITEMS(tegory": "оружие (размер и сила приближены
       "minecraft": "minecraft:arrow",
       "count": 1,
       "category": "стрелы / болты"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "02F837",
+      "editor": "SkillEnchanting1",
+      "skyrimTitle": "Руководство по зачарованию",
+      "minecraft": "minecraft:enchanted_book#unbreaking=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Прочность I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "02F838",
+      "editor": "SkillEnchanting2",
+      "skyrimTitle": "Трагедия в черных тонах",
+      "minecraft": "minecraft:enchanted_book#vanishing_curse=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Проклятие утраты I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "02F839",
+      "editor": "SkillEnchanting3",
+      "skyrimTitle": "Двойная тайна",
+      "minecraft": "minecraft:enchanted_book#unbreaking=2,mending=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Прочность II + Починка I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "02F83A",
+      "editor": "SkillEnchanting4",
+      "skyrimTitle": "Полный каталог чар для оружия",
+      "minecraft": "minecraft:enchanted_book#sharpness=3",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Острота III"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "02F83B",
+      "editor": "SkillEnchanting5",
+      "skyrimTitle": "Полный ка)SKYITEMS",
+R"SKYITEMS(талог чар для доспехов",
+      "minecraft": "minecraft:enchanted_book#protection=3",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Защита III"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "09CD51",
+      "editor": "SpellTomeFlames",
+      "skyrimTitle": "Том заклинаний: Пламя",
+      "minecraft": "minecraft:enchanted_book#fire_aspect=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Заговор огня I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A26FD",
+      "editor": "SpellTomeFirebolt",
+      "skyrimTitle": "Том заклинаний: Огненная стрела",
+      "minecraft": "minecraft:enchanted_book#fire_aspect=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Заговор огня I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A2706",
+      "editor": "SpellTomeFireball",
+      "skyrimTitle": "Том заклинаний: Огненный шар",
+      "minecraft": "minecraft:enchanted_book#fire_aspect=2",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Заговор огня II"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "10F7F4",
+      "editor": "SpellTomeIncinerate",
+      "skyrimTitle": "Том заклинаний: Испепеление",
+      "minecraft": "minecraft:enchanted_book#fire_aspect=2",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Заговор огня II"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A2703",
+      "editor": "SpellTomeFlameCloak",
+      "skyrimTitle": "Том заклинаний: Огненный плащ",
+      "minecraft": "minecraft:enchanted_book#fire_protection=2",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Огнеупорность II"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A2709",
+      "editor": "SpellTomeWallOfFlames",
+      "skyrimTitle": "Том заклинаний: Стена пламени",
+      "minecraft": "minecraft:enchanted_book#fire_protection=3",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Огнеупорность III"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A270C",
+      "editor": "SpellTomeFireStorm",
+      "skyrimTitle": "Том заклинаний: Огненный шторм",
+      "minecraft": "minecraft:enchanted_book#fire_protection=4",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Огнеупорность IV"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "09E2A8",
+      "editor": "SpellTomeOakflesh",
+      "skyrimTitle": "Том заклинаний: Дубовая плоть",
+      "minecraft": "minecraft:enchanted_book#protection=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Защита I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A26E3",
+      "editor": "SpellTomeStoneflesh",
+      "skyrimTitle": "Том заклинаний: Каменная плоть",
+      "minecraft": "minecraft:enchanted_book#protection=2",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Защита II"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A26E4",
+      "editor": "SpellTomeIronflesh",
+      "skyrimTitle": "Том заклинаний: Железная плоть",
+      "minecraft": "minecraft:enchanted_book#protection=3",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Защита III"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A26E9",
+      "editor": "SpellTomeEbonyflesh",
+      "skyrimTitle": "Том заклинаний: Эбонитовая плоть",
+      "minecraft": "minecraft:enchanted_b)SKYITEMS",
+R"SKYITEMS(ook#protection=4",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Защита IV"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "09E2AE",
+      "editor": "SpellTomeLesserWard",
+      "skyrimTitle": "Том заклинаний: Малый оберег",
+      "minecraft": "minecraft:enchanted_book#projectile_protection=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Защита от снарядов I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A2720",
+      "editor": "SpellTomeSteadfastWard",
+      "skyrimTitle": "Том заклинаний: Устойчивый оберег",
+      "minecraft": "minecraft:enchanted_book#projectile_protection=2",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Защита от снарядов II"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A2722",
+      "editor": "SpellTomeGreaterWard",
+      "skyrimTitle": "Том заклинаний: Большой оберег",
+      "minecraft": "minecraft:enchanted_book#projectile_protection=3",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Защита от снарядов III"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A26E6",
+      "editor": "SpellTomeWaterbreathing",
+      "skyrimTitle": "Том заклинаний: Водное дыхание",
+      "minecraft": "minecraft:enchanted_book#respiration=3",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Подводное дыхание III"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A270F",
+      "editor": "SpellTomeMuffle",
+      "skyrimTitle": "Том заклинаний: Приглушение шагов",
+      "minecraft": "minecraft:enchanted_book#swift_sneak=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Проворство I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A2708",
+      "editor": "SpellTomeChainLightning",
+      "skyrimTitle": "Том заклинаний: Цепная молния",
+      "minecraft": "minecraft:enchanted_book#channeling=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Громовержец I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "10F7F5",
+      "editor": "SpellTomeThunderbolt",
+      "skyrimTitle": "Том заклинаний: Грозовой разряд",
+      "minecraft": "minecraft:enchanted_book#channeling=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Громовержец I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0DD643",
+      "editor": "SpellTomeGrandHealing",
+      "skyrimTitle": "Том заклинаний: Высшее лечение",
+      "minecraft": "minecraft:enchanted_book#mending=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Починка I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A271F",
+      "editor": "SpellTomeTurnLesserUndead",
+      "skyrimTitle": "Том заклинаний: Отпугивание младшей нежити",
+      "minecraft": "minecraft:enchanted_book#smite=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Небесная кара I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A2721",
+      "editor": "SpellTomeTurnUndead",
+      "skyrimTitle": "Том заклинаний: Отпугивание нежити",
+      "minecraft": "minecraft:enchanted_book#smite=3",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Небесная кара III"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A2729",
+      "editor": "SpellTomeTurnGreaterUndead",
+      "skyrimTitle": "Том заклинаний: Отпугивание старшей нежит)SKYITEMS",
+R"SKYITEMS(и",
+      "minecraft": "minecraft:enchanted_book#smite=4",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Небесная кара IV"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0DD647",
+      "editor": "SpellTomeBaneOfTheUndead",
+      "skyrimTitle": "Том заклинаний: Проклятье нежити",
+      "minecraft": "minecraft:enchanted_book#smite=5",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Небесная кара V"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "09CD52",
+      "editor": "SpellTomeFrostbite",
+      "skyrimTitle": "Том заклинаний: Обморожение",
+      "minecraft": "minecraft:enchanted_book#frost_walker=1",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Ледоход I"
+    },
+    {
+      "plugin": "Skyrim.esm",
+      "form": "0A2704",
+      "editor": "SpellTomeFrostCloak",
+      "skyrimTitle": "Том заклинаний: Морозный плащ",
+      "minecraft": "minecraft:enchanted_book#frost_walker=2",
+      "count": 1,
+      "category": "магические знания → книга зачарований",
+      "minecraftTitle": "Зачарованная книга: Ледоход II"
     }
   ]
 }

@@ -40,7 +40,7 @@ def test(archive):
         # A real Skyrim may be running in another task. Never close it or update
         # its instance. Mock only the global install guard for this proven fixture;
         # production safety checks and real process/network collection stay intact.
-        wrapper.write_text('''param([string]$WorkerPath,[string]$PlanFile,[switch]$FailInstall)
+        wrapper.write_text('''param([string]$WorkerPath,[string]$PlanFile,[switch]$FailInstall,[switch]$FailTableInstall)
 function Get-Process {
     [CmdletBinding()]param([string[]]$Name)
     if ($Name.Count -eq 1 -and $Name[0] -eq 'SkyrimSE') { return }
@@ -49,6 +49,7 @@ function Get-Process {
 function Move-Item {
     [CmdletBinding()]param([string]$LiteralPath,[string]$Destination)
     if ($FailInstall -and $LiteralPath -match '\\.installing-' -and $Destination -match '\\.jar$') { throw 'Synthetic final JAR move failure' }
+    if ($FailTableInstall -and $LiteralPath -match '\\.installing-' -and $Destination -match 'SkyCraft-items\\.json$') { throw 'Synthetic table upgrade move failure' }
     Microsoft.PowerShell.Management\\Move-Item @PSBoundParameters
 }
 & $WorkerPath -PlanFile $PlanFile
@@ -79,6 +80,20 @@ function Move-Item {
             run(command())
         assert all((game/p).read_bytes()==value for p,value in before.items())
         assert user_table.read_bytes()==original_table,'Update overwrote the custom item table'
+        # An untouched r11 default upgrades, while custom tables above remain unchanged.
+        previous=json.loads((kit/'item-conversion-default.json').read_text(encoding='utf-8'))
+        previous['items']=[row for row in previous['items'] if not row['minecraft'].startswith('minecraft:enchanted_book#')]
+        previous_bytes=(json.dumps(previous,ensure_ascii=False,indent=2)+'\n').encode('utf-8')
+        assert hashlib.sha256(previous_bytes).hexdigest() in manifest['itemTable']['upgradeFromSha256']
+        user_table.write_bytes(previous_bytes)
+        saved_native=native.read_bytes();saved_jar=installed.read_bytes()
+        run([*command(),'-FailTableInstall'],ok=False)
+        assert user_table.read_bytes()==previous_bytes,'Table rollback lost the previous default'
+        assert native.read_bytes()==saved_native and installed.read_bytes()==saved_jar,'Table failure damaged runtime files'
+        run(command())
+        assert user_table.read_bytes()==(kit/'item-conversion-default.json').read_bytes()
+        table_backups=list((game.parent/'SkyCraft-YS-backups').glob('*/SkyCraft-items.json'))
+        assert len(table_backups)==1 and table_backups[0].read_bytes()==previous_bytes
         output=base/'reports with spaces'
         native_logs=base/'SKSE logs';native_logs.mkdir()
         (native_logs/'SkyCraft.log').write_text('SkyCraft synthetic crash stack and frame diagnostics',encoding='utf-8')
@@ -119,7 +134,7 @@ function Move-Item {
             assert not any(n.endswith('.log') or 'accounts' in n or 'properties' in n for n in z.namelist())
         assert all((game/p).read_bytes()==value for p,value in before.items())
         plan.write_text(json.dumps({'action':'exec','game':str(game)}));run(command(),ok=False)
-        print('AUTO ASSISTANT PASS: package hashes; EXE self-checks; JAR+DLL backup/idempotence/tamper rejection/rollback; preserved accounts/config/world; network and gameplay ZIP with local dump; zero environment collection errors; no synthetic secrets; unknown action rejected')
+        print('AUTO ASSISTANT PASS: package hashes; EXE self-checks; JAR+DLL backup/idempotence/tamper rejection/rollback; custom table preserved; pristine r11 table upgrade/backup/rollback; preserved accounts/config/world; network and gameplay ZIP with local dump; zero environment collection errors; no synthetic secrets; unknown action rejected')
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('archive',type=Path);args=parser.parse_args();test(args.archive)

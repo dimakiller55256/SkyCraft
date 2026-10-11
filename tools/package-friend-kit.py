@@ -13,7 +13,10 @@ import subprocess
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_REVISION = 11
+PACKAGE_REVISION = 12
+# Pristine r11 table only. A customized table is deliberately preserved.
+PREVIOUS_ITEM_TABLE_SHA256 = '6c4ef50d4c425f128c9642c03c848454150b5852891b88ab361370d7de79baff'
+PREVIOUS_ITEM_TABLE_LF_SHA256 = 'e2c89b3d4613e2951c8e9774452844555ca93978dbb307f0ac7dd4f8bfd0cd07'
 UPSTREAM_SHA256 = '1133ecde384d70d5261cbc9ba149bc7b544e1653b78846a1623b56241bb392c3'
 NATIVE_SHA256 = '72b0d231f4632cf2268514eece90e9b7adaa2b59c648fcf14aaf55a6513eefa3'
 API_SHA512 = 'ed6b2586d6fde11fde8472f5a527c51e99b67026e46f94d4bfd85e7e28ce5ee299173ee16ad576ceb51f39f98d30a811086a6deb1a86a524859cc16e12da109d'
@@ -39,7 +42,7 @@ def build(output, native_dll=None):
     properties=(ROOT/'fabric/gradle.properties').read_text()
     version=re.search(r'^version=(.+)$',properties,re.M).group(1).strip()
     if not re.fullmatch(r'[A-Za-z0-9._-]+',version): raise ValueError('Invalid version')
-    if version in ('0.1.2-ys.network.8','0.1.2-ys.network.9') and native_dll is None:raise ValueError('This protocol requires the built native DLL; pass --native-dll')
+    if version in ('0.1.2-ys.network.8','0.1.2-ys.network.9','0.1.2-ys.network.10') and native_dll is None:raise ValueError('This protocol requires the built native DLL; pass --native-dll')
     upstream=ROOT/'.tools/friend-package/cache/SkyCraft-0.1.2.zip'
     data=upstream.read_bytes()
     if sha(data)!=UPSTREAM_SHA256: raise ValueError('Official upstream ZIP checksum mismatch')
@@ -88,12 +91,12 @@ def build(output, native_dll=None):
         'sourceCommit':subprocess.check_output(['git','-c',f'safe.directory={ROOT}','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
         'upstream':{'url':'https://github.com/chasmlol/SkyCraft/releases/tag/v0.1.2','zipSha256':UPSTREAM_SHA256},
         'fabricJar':{'file':jar_name,'sha256':sha(jar)},
-        'itemTable':{'file':'item-conversion-default.json','sha256':sha((ROOT/'config/item-conversion.json').read_bytes())},
+        'itemTable':{'file':'item-conversion-default.json','sha256':sha((ROOT/'config/item-conversion.json').read_bytes()),'upgradeFromSha256':[PREVIOUS_ITEM_TABLE_SHA256,PREVIOUS_ITEM_TABLE_LF_SHA256]},
         'nativeDll':{'version':f'{version}-r{PACKAGE_REVISION}' if native_dll else '0.1.2','file':'native/SkyCraft.dll','sha256':sha(dll),'changed':native_dll is not None,'upstreamSha256':NATIVE_SHA256},
         'mo2Archive':{'file':mod_name,'sha256':sha(mod_zip)},
         'prismInstance':{'file':instance_name,'sha256':sha(instance_zip)},
         'requirements':{'skyrimRuntime':'1.7.104.0','skse':'2.3.1','skseRuntimeDll':'skse64_1_7_104.dll','addressLibrary':'versionlib-1-7-104-0.bin','minecraft':'26.3','fabricLoader':'0.19.5','fabricApi':'0.161.0+26.3','java':25},
-        'verification':'network.9-r11: table-driven item exchange, durable owner receipts and overflow outbox, SKSE checkpoints and rollback quarantine, isolated item test world/profile. Previous AE, input, shield and geometry changes retained. See YS-ITEMS-VALIDATION.md; actual Skyrim pickup and two-PC acceptance remain separate.' if native_dll else 'Upstream native DLL verified by hash; gameplay acceptance remains required.'
+        'verification':'network.10-r12: themed enchanted books, registry validation, real anvil and durable overflow; SKSE checkpoints and isolated test profile; pristine table migration. Previous AE, input and shield changes retained. See YS-ENCHANTED-BOOKS.md; actual Skyrim pickup and two-PC acceptance remain separate.' if native_dll else 'Upstream native DLL verified by hash; gameplay acceptance remains required.'
     }
     entries={jar_name:jar,mod_name:mod_zip,instance_name:instance_zip,'package-manifest.json':(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode(),'LICENSE.txt':(ROOT/'LICENSE').read_bytes(),'THIRD-PARTY-NOTICES.md':(ROOT/'THIRD-PARTY-NOTICES.md').read_bytes()}
     if native_dll:entries['native/SkyCraft.dll']=dll
@@ -121,14 +124,17 @@ def build(output, native_dll=None):
     entries['docs/YS-NETWORK8-VALIDATION.md']=(ROOT/'docs/YS-NETWORK8-VALIDATION.md').read_bytes()
     entries['docs/YS-ITEMS.md']=(ROOT/'docs/YS-ITEMS.md').read_bytes()
     entries['docs/YS-ITEMS-VALIDATION.md']=(ROOT/'docs/YS-ITEMS-VALIDATION.md').read_bytes()
+    entries['docs/YS-ENCHANTED-BOOKS.md']=(ROOT/'docs/YS-ENCHANTED-BOOKS.md').read_bytes()
     entries['КОНВЕРТАЦИЯ-ПРЕДМЕТОВ.html']=guide_html('YS-ITEMS.md')
+    entries['КНИГИ-ЗАЧАРОВАНИЙ.html']=guide_html('YS-ENCHANTED-BOOKS.md')
     entries['ТАБЛИЦА-ПРЕДМЕТОВ.html']=item_table_html()
     entries['item-conversion-default.json']=(ROOT/'config/item-conversion.json').read_bytes()
+    entries['enchantment-books.json']=(ROOT/'config/enchantment-books.json').read_bytes()
     wrappers={'Установить обновление.cmd':'install-friend-update.ps1','Проверить сборку.cmd':'check-friend-installation.ps1','Собрать отчёт.cmd':'collect-friend-report.ps1','Адреса хоста.cmd':'show-host-addresses.ps1','Наблюдать запуск.cmd':'capture-skyrim-startup.ps1'}
     for label,script in wrappers.items():
         entries[label]=('@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\\'+script+'" %*\r\nif errorlevel 1 echo Failed. Read the message above.\r\npause\r\n').encode('ascii')
     entries['НАЧАТЬ.txt']=(f'SkyCraft {version}, комплект r{PACKAGE_REVISION} — обновление ОБЕИХ частей\r\n'
-        'r11 добавляет конвертацию предметов. Начните с КОНВЕРТАЦИЯ-ПРЕДМЕТОВ.html и кнопки «Тест предметов без друга». Исправления AE, клавиш и щита сохранены.\r\n'
+        'r12 добавляет книги зачарований из магических книг Skyrim. Начните с КОНВЕРТАЦИЯ-ПРЕДМЕТОВ.html и кнопки «Тест предметов без друга». Исправления AE, клавиш и щита сохранены.\r\n'
         '1. Распакуйте весь ZIP вне папки Skyrim.\r\n2. Откройте ИГРОВЫЕ-ПРОВЕРКИ.html: это актуальная инструкция к этой версии.\r\n'
         '3. Закройте Skyrim/Minecraft. Запустите помощник и нажмите «Обновить мод».\r\n'
         '4. При запросе выберите установленную SkyCraft.dll: MO2 -> правой кнопкой по SkyCraft -> Открыть в проводнике -> SKSE -> Plugins.\r\n'
@@ -155,7 +161,9 @@ def item_table_html():
     data=json.loads((ROOT/'config/item-conversion.json').read_text(encoding='utf-8'))
     rows=[]
     for row in data['items']:
-        cells=[row['category'],row['editor'],row['plugin'],row['form'],row['minecraft'],str(row['count'])]
+        name=(row['skyrimTitle']+' ('+row['editor']+')') if row.get('skyrimTitle') else row['editor']
+        target=(row['minecraftTitle']+' ('+row['minecraft']+')') if row.get('minecraftTitle') else row['minecraft']
+        cells=[row['category'],name,row['plugin'],row['form'],target,str(row['count'])]
         rows.append('<tr>'+''.join('<td>'+html.escape(cell)+'</td>' for cell in cells)+'</tr>')
     return ('''<!doctype html><html lang="ru"><meta charset="utf-8"><title>Таблица обмена SkyCraft</title>
 <style>body{font:16px/1.5 system-ui;margin:24px;color:#17324d}input{font:inherit;padding:10px;width:min(90%,700px)}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{padding:8px;border:1px solid #cbd5e1;text-align:left}th{position:sticky;top:0;background:#e2e8f0}tr:nth-child(even){background:#f8fafc}code{background:#edf2f7}</style>

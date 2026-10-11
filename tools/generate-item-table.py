@@ -90,6 +90,13 @@ rows=[]
 for r in records:
  m=mapped(r)
  if m:rows.append(dict(plugin=r['plugin'],form=r['form'],editor=r['editor'],minecraft='minecraft:'+m[0],count=1,category=m[1]))
+verified={(r['plugin'],r['form']):r for r in records}
+books=json.loads((root/'config/enchantment-books.json').read_text(encoding='utf-8'))
+for row in books['items']:
+ record=verified[(row['plugin'],row['form'])]
+ if record['type']!='BOOK' or record['editor']!=row['editor']:
+  raise ValueError('Book source identity does not match the locally installed game')
+ rows.append(row)
 table=dict(schema=1,enabled=True,description='Автоматически конвертируются только новые поступления; неизвестные, квестовые, краденые, зачарованные, отравленные, улучшенные и надетые предметы остаются в Skyrim. 1 к 1; замену можно изменить.',items=rows)
 (root/'config').mkdir(exist_ok=True)
 payload=json.dumps(table,ensure_ascii=False,indent=2)+'\n'

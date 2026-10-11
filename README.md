@@ -6,7 +6,8 @@
 [пакет для друга](docs/YS-FRIEND.md),
 [подробная инструкция HTML](docs/testing/ИНСТРУКЦИЯ.html),
 [диагностика закрытия Skyrim при запуске](docs/YS-STARTUP.md),
-[конвертация предметов и одиночный тест](docs/YS-ITEMS.md).
+[конвертация предметов и одиночный тест](docs/YS-ITEMS.md),
+[книги зачарований из магических томов Skyrim](docs/YS-ENCHANTED-BOOKS.md).
 
 ![SkyCraft: a Minecraft player walking through Riverwood with the Minecraft HUD](docs/screenshot.jpg)
 

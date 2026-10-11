@@ -142,7 +142,7 @@ void Install() {
         std::unordered_set<std::string> keys;
         for(const auto& row:data.at("items")) {
             Mapping m{row.at("plugin"),row.at("minecraft"),static_cast<std::uint32_t>(std::stoul(row.at("form").get<std::string>(),nullptr,16)),row.value("count",1)};
-            if(m.plugin.size()>127||m.local>0xFFFFFF||m.item.size()>95||m.ratio<1||m.ratio>64||!std::regex_match(m.item,std::regex("[a-z0-9_.-]+:[a-z0-9_./-]+(#[a-z0-9_]+)?")))throw std::runtime_error("invalid item table row");
+            if(m.plugin.size()>127||m.local>0xFFFFFF||m.item.size()>95||m.ratio<1||m.ratio>64||!std::regex_match(m.item,std::regex("[a-z0-9_.-]+:[a-z0-9_./-]+(#[a-z0-9_./:=,-]+)?")))throw std::runtime_error("invalid item table row");
             auto key=m.plugin+":"+std::to_string(m.local);if(!keys.insert(key).second)throw std::runtime_error("duplicate item table key");
             if(auto* form=forms->LookupForm(m.local,m.plugin);form&&form->As<RE::TESBoundObject>())table.emplace(form->GetFormID(),m);
         }

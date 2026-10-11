@@ -11,6 +11,8 @@ import net.fabricmc.fabric.api.attachment.v1.AttachmentType;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
@@ -23,6 +25,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.alchemy.PotionContents;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.level.storage.TagValueOutput;
 import net.minecraft.world.phys.Vec3;
@@ -54,12 +58,25 @@ public final class ItemConversion {
         }
         return UUID.nameUUIDFromBytes((world+":"+player.getUUID()).getBytes(StandardCharsets.UTF_8)).toString();
     }
-    public static ItemStack stack(String key,int count) {
+    public static ItemStack stack(String key,int count,RegistryAccess registries) {
         String[] parts=key.split("#",-1);if(parts.length>2)throw new IllegalArgumentException("Invalid item key");
         Identifier id=Identifier.parse(parts[0]);
         var item=BuiltInRegistries.ITEM.getOptional(id).orElseThrow(()->new IllegalArgumentException("Unknown Minecraft item: "+id));
         var out=new ItemStack(item,count);if(out.isEmpty())throw new IllegalArgumentException("Empty Minecraft item");
-        if(parts.length==2){
+        if(parts[0].equals("minecraft:enchanted_book")) {
+            if(parts.length!=2)throw new IllegalArgumentException("Enchanted book has no stored enchantments");
+            var registry=registries.lookupOrThrow(Registries.ENCHANTMENT);
+            var stored=new ItemEnchantments.Mutable(ItemEnchantments.EMPTY);
+            for(var entry:EnchantedBookSpec.parse(parts[1]).entrySet()) {
+                var enchantment=registry.get(Identifier.parse(entry.getKey())).orElseThrow(()->new IllegalArgumentException("Unknown book enchantment"));
+                if(entry.getValue()<enchantment.value().getMinLevel()||entry.getValue()>enchantment.value().getMaxLevel())
+                    throw new IllegalArgumentException("Book enchantment level exceeds its supported range");
+                for(var other:stored.keySet())if(!Enchantment.areCompatible(other,enchantment))
+                    throw new IllegalArgumentException("Incompatible book enchantments");
+                stored.set(enchantment,entry.getValue());
+            }
+            out.set(DataComponents.STORED_ENCHANTMENTS,stored.toImmutable());
+        } else if(parts.length==2){
             if(!Set.of("minecraft:potion","minecraft:splash_potion","minecraft:lingering_potion").contains(parts[0]))throw new IllegalArgumentException("Potion applied to non-potion");
             var potion=BuiltInRegistries.POTION.get(Identifier.withDefaultNamespace(parts[1])).orElseThrow(()->new IllegalArgumentException("Unknown potion"));
             out.set(DataComponents.POTION_CONTENTS,new PotionContents(potion));
@@ -73,7 +90,7 @@ public final class ItemConversion {
             owner=target(player);
             if(action!=1&&action!=2)throw new IllegalArgumentException("Invalid phase");
             if((action==2||!requestedTarget.isEmpty())&&!owner.equals(requestedTarget))throw new IllegalArgumentException("Different Minecraft world or owner");
-            ItemStack sample=stack(key,1); // Reject unknown items BEFORE native removal.
+            ItemStack sample=stack(key,1,player.registryAccess()); // Reject unknown items BEFORE native removal.
             String before=player.getAttachedOrElse(LEDGER,"");var ledger=ConversionLedger.parse(before);
             var receipt=ledger.receipts.get(id);
             if(action==2&&receipt==null)throw new IllegalArgumentException("Commit has no durable preparation");
@@ -133,7 +150,7 @@ public final class ItemConversion {
             if(player.level().getEntity(entityId)!=null)continue;
             // If the owner crossed a door/world, remove the old display and move its durable outbox.
             for(var level:player.level().getServer().getAllLevels()){var old=level.getEntity(entityId);if(old!=null)old.discard();}
-            var item=stack(receipt.item(),1);item.setCount(Math.min(receipt.overflow(),item.getMaxStackSize()));
+            var item=stack(receipt.item(),1,player.registryAccess());item.setCount(Math.min(receipt.overflow(),item.getMaxStackSize()));
             Vec3 direction=Vec3.directionFromRotation(0,player.getYRot());Vec3 pos=player.position().add(direction.scale(1.1)).add(0,0.1,0);
             var entity=new OverflowItem(player,pos,item,entry.getKey());entity.setUUID(entityId);player.level().addFreshEntity(entity);
         }
@@ -155,7 +172,7 @@ public final class ItemConversion {
             String before=player.getAttachedOrElse(LEDGER,"");var ledger=ConversionLedger.parse(before);var receipt=ledger.receipts.get(transaction);
             if(receipt==null||receipt.overflow()==0){discard();return;}
             List<ItemStack> inventory=copyInventory(player);
-            ItemStack item=stack(receipt.item(),Math.min(getItem().getCount(),receipt.overflow()));int n=item.getCount();addSurvival(player,item);int taken=n-item.getCount();if(taken==0)return;
+            ItemStack item=stack(receipt.item(),Math.min(getItem().getCount(),receipt.overflow()),player.registryAccess());int n=item.getCount();addSurvival(player,item);int taken=n-item.getCount();if(taken==0)return;
             ledger.receipts.put(transaction,receipt.remainder(receipt.overflow()-taken));player.setAttached(LEDGER,ledger.json());
             try{saveAtomic(player);}catch(Exception e){restoreInventory(player,inventory);player.setAttached(LEDGER,before);SkyCraft.LOG.error("SkyCraft outbox pickup not saved; retry later",e);return;}
             player.take(this,taken);player.inventoryMenu.broadcastChanges();discard();

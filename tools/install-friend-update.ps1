@@ -22,6 +22,7 @@ $nativeTemporary = $null
 $tablePath = $null
 $tableTemporary = $null
 $tableNeeded = $false
+$tableUpgrade = $false
 if ($manifest.nativeDll.changed) {
     $nativeSource = Join-Path $repoPath 'native\SkyCraft.dll'
     if ((Get-SkyCraftFileHash -LiteralPath $nativeSource).Hash -ne $manifest.nativeDll.sha256) { throw 'Новая SkyCraft.dll повреждена. Распакуйте весь комплект заново.' }
@@ -38,7 +39,12 @@ if ($manifest.nativeDll.changed) {
         if ((Get-SkyCraftFileHash -LiteralPath $tableSource).Hash -ne $manifest.itemTable.sha256) { throw 'Таблица предметов повреждена. Распакуйте комплект заново.' }
         $tablePath = Join-Path (Split-Path -Parent $nativePath) 'SkyCraft-items.json'
         $tableNeeded = -not (Test-Path -LiteralPath $tablePath)
-        if ($tableNeeded) { $tableTemporary = $tablePath + '.installing-' + [Guid]::NewGuid().ToString('N') }
+        if (-not $tableNeeded) {
+            if ((Get-Item -LiteralPath $tablePath).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Таблица предметов является ссылкой. Обновление не выполнено.' }
+            $tableOriginalHash = (Get-SkyCraftFileHash -LiteralPath $tablePath).Hash
+            $tableUpgrade = @($manifest.itemTable.upgradeFromSha256) -contains $tableOriginalHash
+        }
+        if ($tableNeeded -or $tableUpgrade) { $tableTemporary = $tablePath + '.installing-' + [Guid]::NewGuid().ToString('N') }
     }
 }
 $jarSource = Join-Path $repoPath $manifest.fabricJar.file
@@ -54,7 +60,7 @@ foreach ($file in Get-ChildItem -LiteralPath $modsPath -File -Filter '*.jar') {
     if ($metadata.id -in @('skycraft', 'e4mc')) { $oldFiles += $file }
 }
 if ((Test-Path -LiteralPath $destination) -and -not ($oldFiles | Where-Object FullName -eq $destination)) { throw 'Новое имя JAR занято другим файлом; изменения не выполнены.' }
-if (-not $tableNeeded -and $oldFiles.Count -eq 1 -and $oldFiles[0].FullName -eq $destination -and (Get-SkyCraftFileHash -LiteralPath $destination).Hash -eq $manifest.fabricJar.sha256 -and (-not $nativePath -or (Get-SkyCraftFileHash -LiteralPath $nativePath).Hash -eq $manifest.nativeDll.sha256)) {
+if (-not $tableNeeded -and -not $tableUpgrade -and $oldFiles.Count -eq 1 -and $oldFiles[0].FullName -eq $destination -and (Get-SkyCraftFileHash -LiteralPath $destination).Hash -eq $manifest.fabricJar.sha256 -and (-not $nativePath -or (Get-SkyCraftFileHash -LiteralPath $nativePath).Hash -eq $manifest.nativeDll.sha256)) {
     Write-Host 'Эта сборка уже установлена; никаких изменений.'
     return
 }
@@ -73,7 +79,7 @@ try {
         Copy-Item -LiteralPath $nativeSource -Destination $nativeTemporary
         if ((Get-SkyCraftFileHash -LiteralPath $nativeTemporary).Hash -ne $manifest.nativeDll.sha256) { throw 'Temporary DLL verification failed.' }
     }
-    if ($tableNeeded) {
+    if ($tableNeeded -or $tableUpgrade) {
         Copy-Item -LiteralPath $tableSource -Destination $tableTemporary
         if ((Get-SkyCraftFileHash -LiteralPath $tableTemporary).Hash -ne $manifest.itemTable.sha256) { throw 'Temporary item table verification failed.' }
     }
@@ -93,11 +99,19 @@ try {
     }
     Move-Item -LiteralPath $temporary -Destination $destination
     $installed = $true
+    if ($tableUpgrade) {
+        if ((Get-SkyCraftFileHash -LiteralPath $tablePath).Hash -ne $tableOriginalHash) { throw 'Таблица изменилась во время обновления. Изменения отменяются.' }
+        $tableBackup = Join-Path $backupPath 'SkyCraft-items.json'
+        Move-Item -LiteralPath $tablePath -Destination $tableBackup
+        $moved.Add([pscustomobject]@{Original=$tablePath; Backup=$tableBackup})
+        Move-Item -LiteralPath $tableTemporary -Destination $tablePath
+        $tableInstalled = $true
+    }
     if ($tableNeeded -and -not (Test-Path -LiteralPath $tablePath)) {
         Move-Item -LiteralPath $tableTemporary -Destination $tablePath
         $tableInstalled = $true
     }
-    [pscustomobject]@{Utc=[DateTime]::UtcNow.ToString('o'); Version=$manifest.version; Installed=$destination; ItemTableCreated=$tableInstalled; ItemTable=$tablePath; Moved=@($moved.ToArray())} |
+    [pscustomobject]@{Utc=[DateTime]::UtcNow.ToString('o'); Version=$manifest.version; Installed=$destination; ItemTableCreated=($tableInstalled -and $tableNeeded); ItemTableUpgraded=$tableUpgrade; ItemTable=$tablePath; Moved=@($moved.ToArray())} |
         ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $backupPath 'installation.json') -Encoding UTF8
 } catch {
     if ($tableInstalled -and (Test-Path -LiteralPath $tablePath)) { Remove-Item -LiteralPath $tablePath }

@@ -1,6 +1,7 @@
 #include "Items.h"
 #include "ItemDefaults.h"
 #include "ItemCheckpoint.h"
+#include "ItemForm.h"
 #include "Game.h"
 #include "Link.h"
 #include <nlohmann/json.hpp>
@@ -51,14 +52,30 @@ namespace {
         proto::ItemRequest notice{};notice.action=3;notice.count=2;Link::Get().WriteItemRequest(notice);
         logger::error("item conversion paused: {} (character {})", reason, character);
     }
-    bool Protected(RE::InventoryEntryData* entry) {
-        if (!entry || !entry->object || entry->IsQuestObject() || entry->IsWorn() || entry->IsFavorited() || entry->IsPoisoned() || entry->GetOwner()) return true;
+    const char* ProtectionReason(RE::InventoryEntryData* entry) {
+        if (!entry || !entry->object) return "inventory_entry_missing";
+        if (entry->IsQuestObject()) return "quest_item";
+        if (entry->IsWorn()) return "equipped";
+        if (entry->IsFavorited()) return "favorited";
+        if (entry->IsPoisoned()) return "poisoned";
+        if (entry->GetOwner()) return "ownership_marked";
         auto* enchantable = entry->object->As<RE::TESEnchantableForm>();
-        if (enchantable && enchantable->formEnchanting) return true;
+        if (enchantable && enchantable->formEnchanting) return "base_enchantment";
         if (entry->extraLists) for (auto* extra : *entry->extraLists) {
-            if (extra && (extra->HasType<RE::ExtraEnchantment>() || extra->HasType<RE::ExtraHealth>() || extra->HasType<RE::ExtraTextDisplayData>() || extra->HasType<RE::ExtraSoul>())) return true;
+            if (!extra) continue;
+            if (extra->HasType<RE::ExtraEnchantment>()) return "instance_enchantment";
+            if (extra->HasType<RE::ExtraHealth>()) return "tempered";
+            if (extra->HasType<RE::ExtraTextDisplayData>()) return "custom_name";
+            if (extra->HasType<RE::ExtraSoul>()) return "instance_soul";
         }
-        return false;
+        return nullptr;
+    }
+    void Cancel(Json& tx, const char* reason, RE::FormID resolved=0, int available=0) {
+        tx["phase"]="cancelled";tx["reason"]=reason;
+        tx["resolvedForm"]=resolved;tx["available"]=available;
+        logger::warn("item conversion cancelled: {} reason {} {}:{:06X} resolved {:08X} available {} requested {}; no conversion removal performed",
+            tx.at("id").get<std::string>(),reason,tx.at("plugin").get<std::string>(),tx.at("local").get<std::uint32_t>(),resolved,available,tx.at("count").get<int>());
+        if (!Persist()) Pause("cannot persist cancellation; Skyrim inventory unchanged");
     }
     void Fill(char* dest, std::size_t cap, const std::string& text) { std::memcpy(dest, text.data(), std::min(cap-1, text.size())); }
     void Send(const Json& tx) {
@@ -167,7 +184,10 @@ void OnGameLoaded() {
         const auto path=journalDir/(character+".json");
         if(std::filesystem::exists(path)){std::ifstream in(path);Json j;in>>j;history=j.at("transactions");if(j.value("test",false)!=testProfile){Pause("item journal profile type disagrees with Skyrim checkpoint");return;}}
         if(!ItemCheckpoint::CanResume(Checkpoint(loaded),Checkpoint(history))){Pause("Skyrim checkpoint and external journal disagree, or removal was interrupted; manual recovery required");return;}
-        for(auto& tx:history)if(tx.at("phase")=="prepared"&&std::none_of(loaded.begin(),loaded.end(),[&](const auto& old){return old.at("id")==tx.at("id");}))tx.at("phase")="cancelled";
+        for(auto& tx:history)if(tx.at("phase")=="prepared"&&std::none_of(loaded.begin(),loaded.end(),[&](const auto& old){return old.at("id")==tx.at("id");})) {
+            tx.at("phase")="cancelled";tx["reason"]="not_in_loaded_checkpoint";
+            logger::info("item conversion cancelled: {} reason not_in_loaded_checkpoint; no conversion removal performed",tx.at("id").get<std::string>());
+        }
         if(!Persist()){Pause("cannot persist resumed item journal");return;}
         ready=loadedReady;logger::info("item conversion resumed: {} transactions {}",character,history.size());
     } catch(const std::exception& e) {Pause(e.what());}
@@ -187,7 +207,7 @@ void PerFrame(RE::PlayerCharacter* player) {
     if(testProfile!=Link::Get().ItemTestWorld()){proto::ItemRequest notice{};notice.action=3;notice.count=testProfile?4:5;Link::Get().WriteItemRequest(notice);pickups.clear();return;}
     if(blocked||table.empty()||!player||player->IsDead()||!State().mcInWorld)return;
     if(!ready) {
-        if(!announced){logger::info("item conversion: save Skyrim with F5 to initialize a checkpoint");announced=true;}
+        if(!announced){logger::info("item conversion: save Skyrim through its menu to initialize a checkpoint");announced=true;}
         proto::ItemRequest notice{};notice.action=3;notice.count=1;if(testProfile)Fill(notice.id,40,lastTestControl);Link::Get().WriteItemRequest(notice);return;
     }
     if(!Link::Get().McAlive()||State().skyrimMenuOpen)return;
@@ -197,7 +217,8 @@ void PerFrame(RE::PlayerCharacter* player) {
             auto [formID,count]=pickups.front();pickups.pop_front();const auto& map=table.at(formID);
             auto* object=RE::TESForm::LookupByID<RE::TESBoundObject>(formID);if(!object)return;
             auto inventory=player->GetInventory();auto found=inventory.find(object);
-            if(found==inventory.end()||Protected(found->second.second.get())){logger::info("item conversion protected pickup retained: {:08X}",formID);return;}
+            const char* protection=found==inventory.end()?"inventory_entry_missing":ProtectionReason(found->second.second.get());
+            if(protection){logger::info("item conversion protected pickup retained: {:08X} reason {}",formID,protection);return;}
             const int incoming=std::min(count,found->second.first);count=std::min(incoming,4096/map.ratio);if(count<1)return;
             if(incoming>count)pickups.emplace_front(formID,incoming-count);
             if(history.size()>=8192){Pause("item journal reached its safe size limit");return;}
@@ -211,10 +232,12 @@ void PerFrame(RE::PlayerCharacter* player) {
             const std::string phase=tx->at("phase");
             if(reply.status==1&&phase=="prepared") {
                 tx->at("target")=std::string(reply.target,strnlen_s(reply.target,40));
-                auto* object=RE::TESDataHandler::GetSingleton()->LookupForm<RE::TESBoundObject>(tx->at("local").get<std::uint32_t>(),tx->at("plugin").get<std::string>());
-                if(!object){tx->at("phase")="cancelled";Persist();return;}
+                auto* object=ItemForm::Resolve<RE::TESBoundObject>(RE::TESDataHandler::GetSingleton(),tx->at("local").get<std::uint32_t>(),tx->at("plugin").get<std::string>());
+                if(!object){Cancel(*tx,"source_form_missing_or_not_bound");return;}
                 auto inventory=player->GetInventory();auto found=inventory.find(object);const int count=tx->at("count");
-                if(found==inventory.end()||found->second.first<count||Protected(found->second.second.get())){tx->at("phase")="cancelled";Persist();return;}
+                if(found==inventory.end()){Cancel(*tx,"inventory_entry_missing",object->GetFormID());return;}
+                if(found->second.first<count){Cancel(*tx,"inventory_count_changed",object->GetFormID(),found->second.first);return;}
+                if(const char* protection=ProtectionReason(found->second.second.get())){Cancel(*tx,protection,object->GetFormID(),found->second.first);return;}
                 const int before=found->second.first;tx->at("phase")="removing";
                 if(!Persist()){Pause("cannot record removal intent; inventory unchanged");return;}
                 removing=true;player->RemoveItem(object,count,RE::ITEM_REMOVE_REASON::kRemove,nullptr,nullptr);removing=false;
@@ -229,7 +252,7 @@ void PerFrame(RE::PlayerCharacter* player) {
                 tx->at("phase")="done";if(!Persist()){Pause("delivery receipt journal write failed");return;}
                 logger::info("item conversion delivered: {}",tx->at("id").get<std::string>());Link::Get().WriteItemRequest({});return;
             }
-            if(reply.status==3){if(phase=="removed")Pause("Minecraft rejected a removed item; inspect pending journal");else{tx->at("phase")="cancelled";Persist();logger::warn("item conversion rejected; retained in Skyrim: {}",reply.message);}return;}
+            if(reply.status==3){if(phase=="removed")Pause("Minecraft rejected a removed item; inspect pending journal");else{(*tx)["detail"]=std::string(reply.message,strnlen_s(reply.message,sizeof(reply.message)));Cancel(*tx,"minecraft_rejected");logger::warn("item conversion rejected; retained in Skyrim: {}",reply.message);}return;}
             if(reply.status==2&&phase=="prepared"){Pause("Minecraft already delivered before known Skyrim removal");return;}
         }
         if(GetTickCount64()-lastSend>=1000)Send(*tx);

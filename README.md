@@ -224,3 +224,5 @@ For development:
 ## License
 
 [MIT](LICENSE)
+
+Повтор конвертации после отменённых обменов: [короткая инструкция r13](docs/YS-ITEMS-RETEST.md).

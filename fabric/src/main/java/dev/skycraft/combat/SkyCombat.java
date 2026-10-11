@@ -55,7 +55,24 @@ public final class SkyCombat {
 	/** Skyrim damage is divided by this for Minecraft (a 15-damage bandit swing = 3 = 1.5 hearts). */
 	public static final float SKYRIM_TO_MC_DAMAGE = 5.0F;
 
-	private static final Map<Integer, SkyrimActorEntity> PROXIES = new HashMap<>();
+	private static final Map<java.util.UUID, Map<Integer, SkyrimActorEntity>> TABLES = new HashMap<>();
+	private record GuestActors(List<SkyLink.Actor> actors,int tick) {}
+	private static final Map<java.util.UUID, GuestActors> GUESTS = new HashMap<>();
+	private static java.util.UUID hostOwner;
+	private static final SkyLink.SkyState HOST_WORLD=new SkyLink.SkyState();
+	public static void guestActors(ServerPlayer player,List<SkyLink.Actor> actors) {
+		if(dev.skycraft.net.SkyNet.isHost(player)) return;
+		int tick=player.level().getServer().getTickCount();
+		var previous=GUESTS.get(player.getUUID());
+		if(previous!=null && tick-previous.tick()<2) return;
+		var valid=actors.stream().filter(a -> a.formId()!=0 && Float.isFinite(a.x()) && Float.isFinite(a.y()) && Float.isFinite(a.z())
+			&& Float.isFinite(a.yaw()) && Float.isFinite(a.width()) && Float.isFinite(a.height()) && a.width()>=0.3f && a.width()<=6
+			&& a.height()>=0.3f && a.height()<=12 && player.distanceToSqr(a.x(),a.y(),a.z())<=96*96).limit(Proto.MAX_ACTORS).toList();
+		GUESTS.put(player.getUUID(),new GuestActors(valid,tick));
+	}
+	public static @Nullable SkyrimActorEntity proxy(ServerPlayer owner,int id) {
+		return TABLES.getOrDefault(owner.getUUID(),Map.of()).get(id);
+	}
 	private static final List<SkyLink.Actor> ACTORS = new ArrayList<>();
 
 	private SkyCombat() {
@@ -64,40 +81,52 @@ public final class SkyCombat {
 	public static void init() {
 		FabricDefaultAttributeRegistry.register(SKYRIM_ACTOR, LivingEntity.createLivingAttributes());
 		ServerTickEvents.END_SERVER_TICK.register(SkyCombat::serverTick);
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED.register(server->{TABLES.clear();GUESTS.clear();hostOwner=null;});
 	}
 
 	public static @Nullable SkyrimActorEntity proxy(int formId) {
-		return PROXIES.get(formId);
+		return hostOwner==null ? null : TABLES.getOrDefault(hostOwner,Map.of()).get(formId);
 	}
 
 	private static void serverTick(MinecraftServer server) {
 		List<ServerPlayer> players = server.getPlayerList().getPlayers();
-		if (!SkyLink.active() || players.isEmpty()) {
-			removeAll();
-			return;
-		}
-		ServerLevel level = players.getFirst().level();
+		var owners=players.stream().map(ServerPlayer::getUUID).collect(java.util.stream.Collectors.toSet());
+		TABLES.entrySet().removeIf(e->{if(owners.contains(e.getKey()))return false;e.getValue().values().forEach(Entity::discard);return true;});
+		GUESTS.keySet().retainAll(owners);
 		for (ServerPlayer player : players) {
 			pickUpNearby(player);
-		}
-		if (SkyLink.readActors(ACTORS)) {
-			sync(level);
-		}
-		// Hits land during the tick (melee, sweeps, arrows, fire); send one combined hit per actor.
-		for (SkyrimActorEntity proxy : PROXIES.values()) {
-			float[] hit = proxy.takeHit();
-			if (hit != null && (hit[0] > 0.0F || hit[3] > 0.0F)) {
-				SkyLink.pushEvent(
-					Proto.EV_HIT_ACTOR, proxy.formId(), hit[0], hit[1], hit[2], hit[3], Float.floatToRawIntBits(hit[4]), Float.floatToRawIntBits(hit[5])
-				);
-				SkyCraft.LOG.info("SkyCraft: hit {} for {} (knockback {})", proxy.getName().getString(), hit[0], hit[3]);
+			boolean host=dev.skycraft.net.SkyNet.isHost(player);
+			if(host) {
+				hostOwner=player.getUUID();
+				if(SkyLink.active() && SkyLink.inputFresh() && SkyLink.readActors(ACTORS)) sync(player,ACTORS);
+				// A paused host keeps its last stand-ins. Its heartbeat is not a disconnect.
+			} else {
+				var snapshot=GUESTS.get(player.getUUID());
+				if(snapshot!=null && server.getTickCount()-snapshot.tick()<=60) sync(player,snapshot.actors());
+				else sync(player,List.of());
+			}
+			if(server.getTickCount()%10==0 && dev.skycraft.net.SkyNet.isHost(player)) {
+				boolean ready=SkyLink.readSkyState(HOST_WORLD) && HOST_WORLD.inGame() && !HOST_WORLD.loading();
+				for(var guest:players) if(!dev.skycraft.net.SkyNet.isHost(guest) && net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(guest,dev.skycraft.net.ActorSync.WorldContext.TYPE))
+					net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(guest,new dev.skycraft.net.ActorSync.WorldContext(HOST_WORLD.worldId,ready));
+			}
+			for(var proxy:TABLES.getOrDefault(player.getUUID(),Map.of()).values()) {
+				float[] hit=proxy.takeHit();
+				if(hit==null || !(hit[0]>0 || hit[3]>0)) continue;
+				int flags=Float.floatToRawIntBits(hit[4]),weapon=Float.floatToRawIntBits(hit[5]);
+				if(host) SkyLink.pushEvent(Proto.EV_HIT_ACTOR,proxy.formId(),hit[0],hit[1],hit[2],hit[3],flags,weapon);
+				else if(net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(player,dev.skycraft.net.ActorSync.Hit.TYPE))
+					net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player,new dev.skycraft.net.ActorSync.Hit(proxy.formId(),hit[0],hit[1],hit[2],hit[3],flags,weapon));
+				SkyCraft.LOG.info("SkyCraft: actor hit routed to {}: {}, damage {}",host?"host":"guest",Integer.toHexString(proxy.formId()),hit[0]);
 			}
 		}
 	}
 
-	private static void sync(ServerLevel level) {
+	private static void sync(ServerPlayer owner,List<SkyLink.Actor> actors) {
+		ServerLevel level=owner.level();
+		var PROXIES=TABLES.computeIfAbsent(owner.getUUID(),id->new HashMap<>());
 		Map<Integer, SkyLink.Actor> live = new HashMap<>();
-		for (SkyLink.Actor a : ACTORS) {
+		for (SkyLink.Actor a : actors) {
 			if (!a.dead()) {
 				live.put(a.formId(), a);
 			}
@@ -116,6 +145,7 @@ public final class SkyCombat {
 			if (proxy == null) {
 				proxy = new SkyrimActorEntity(SKYRIM_ACTOR, level);
 				proxy.setFormId(a.formId());
+				proxy.setOwner(owner.getUUID());
 				proxy.setSize(a.width(), a.height());
 				proxy.snapTo(a.x(), a.y(), a.z(), a.yaw(), 0.0F);
 				if (!a.name().isEmpty()) {
@@ -173,41 +203,44 @@ public final class SkyCombat {
 		}
 	}
 
-	private static void removeAll() {
-		if (PROXIES.isEmpty()) {
-			return;
-		}
-		PROXIES.values().forEach(Entity::discard);
-		PROXIES.clear();
-	}
 
 	/**
 	 * Skyrim hit the player. Runs on the server thread. {@code kind} is a Proto.HURT_* value and
 	 * {@code skyrimDamage} is what Skyrim would have taken off the player's health.
 	 */
 	public static void hurtPlayer(ServerPlayer player, int kind, float skyrimDamage, int attackerFormId, int flags) {
+		hurtPlayer(player,kind,skyrimDamage,attackerFormId,flags,null);
+	}
+
+	public static void hurtPlayer(ServerPlayer player, int kind, float skyrimDamage, int attackerFormId, int flags, net.minecraft.world.phys.Vec3 origin) {
 		if (!player.isAlive() || skyrimDamage <= 0.0F) {
 			return;
 		}
 		ServerLevel level = player.level();
-		SkyrimActorEntity attacker = PROXIES.get(attackerFormId);
+		SkyrimActorEntity attacker = proxy(player,attackerFormId);
 		if (attacker != null && attacker.distanceToSqr(player) > 24.0 * 24.0) {
 			attacker = null; // a guest's own NPC with the same form id as one of the host's
 		}
 		DamageSources sources = level.damageSources();
 		DamageSource source = switch (kind) {
-			case Proto.HURT_MELEE -> attacker != null ? sources.mobAttack(attacker) : sources.generic();
-			case Proto.HURT_PROJECTILE -> attacker != null ? sources.mobProjectile(attacker, attacker) : sources.generic();
+			case Proto.HURT_MELEE -> attacker != null ? sources.mobAttack(attacker) : new DamageSource(level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE).getOrThrow(net.minecraft.world.damagesource.DamageTypes.MOB_ATTACK));
+			case Proto.HURT_PROJECTILE -> attacker != null ? sources.mobProjectile(attacker, attacker) : new DamageSource(level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE).getOrThrow(net.minecraft.world.damagesource.DamageTypes.MOB_PROJECTILE));
 			case Proto.HURT_MAGIC -> attacker != null ? sources.indirectMagic(attacker, attacker) : sources.magic();
 			default -> sources.generic();
 		};
-		float damage = skyrimDamage / SKYRIM_TO_MC_DAMAGE;
+		if (origin!=null && origin.distanceToSqr(player.position())<=24*24) {
+			// Preserve the guest's own attack direction so vanilla shields can test the front arc.
+			source=new DamageSource(source.typeHolder(),origin);
+		}
+		float damage = DamageBalance.convert(kind, skyrimDamage, SKYRIM_TO_MC_DAMAGE, 12.0F);
 		float healthBefore = player.getHealth();
 		boolean blocking = player.isBlocking();
 		boolean hurt = player.hurtServer(level, source, damage);
 		trainDefence(player, damage, blocking && player.getHealth() >= healthBefore - 1.0E-3F);
 		SkyCraft.LOG.info("SkyCraft: Skyrim hit the player for {} ({} Minecraft): health {} -> {}{}", skyrimDamage, damage, healthBefore, player.getHealth(),
 			hurt ? "" : " (blocked/immune)");
+		SkyCraft.LOG.info("SkyCraft combat evidence: owner {}, kind {}, source {}, attacker {}, shield {}, armor {}, origin {}, health {} -> {}",
+			player.getUUID(),kind,source.getMsgId(),Integer.toHexString(attackerFormId),blocking,player.getArmorValue(),source.getSourcePosition(),healthBefore,player.getHealth());
 		if (hurt && attacker != null && (flags & Proto.HURT_POWER_ATTACK) != 0 && !player.isBlocking()) {
 			// Power attacks shove harder, like a sprint hit does in Minecraft.
 			player.knockback(0.5, attacker.getX() - player.getX(), attacker.getZ() - player.getZ(), source, damage);

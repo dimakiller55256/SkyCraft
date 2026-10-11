@@ -31,6 +31,7 @@ final class ProxySync {
 		}
 		for (Entity entity : minecraft.level.entitiesForRendering()) {
 			if (entity instanceof SkyrimActorEntity proxy) {
+				if (minecraft.player==null || !proxy.ownedBy(minecraft.player.getUUID())) continue;
 				SkyLink.Actor a = BY_ID.get(proxy.formId());
 				if (a == null) {
 					continue;

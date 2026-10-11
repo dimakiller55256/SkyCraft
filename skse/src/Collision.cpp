@@ -12,7 +12,7 @@ namespace skycraft
 		constexpr int   kBelow = 3;           // regions below the player
 		constexpr int   kAbove = 2;           // regions above the player
 		constexpr int   kGrid = Collision::kRegionSize * 8;  // voxels per region edge (64)
-		constexpr auto  kRefreshNear = 1000ms;  // re-send regions next to the player this often (doors etc.)
+		constexpr auto  kRefreshNear = 750ms;  // include animated doors without starving new regions
 		constexpr auto  kFrameBudget = 2500us;
 		constexpr int   kMaxHarvestsPerFrame = 3;
 		constexpr int   kMaxKeys = 16384;
@@ -278,7 +278,7 @@ namespace skycraft
 		bool gathered = false;
 		const auto start = now;
 		// Regions around blocks just dug: their collision changed.
-		while (!urgent_.empty() && done < kMaxHarvestsPerFrame * 2) {
+		while (!urgent_.empty() && done < kMaxHarvestsPerFrame && Clock::now() - start <= kFrameBudget) {
 			const auto r = urgent_.back();
 			urgent_.pop_back();
 			if (std::abs(r[0] - prx) > kRadius + 1 || std::abs(r[2] - prz) > kRadius + 1 || r[1] - pry < -kBelow - 1 || r[1] - pry > kAbove + 1) {
@@ -298,10 +298,11 @@ namespace skycraft
 			++done;
 		}
 		for (const auto& o : offsets_) {
+			if (done >= kMaxHarvestsPerFrame || Clock::now() - start > kFrameBudget) break;
 			const int rx = prx + o[0], ry = pry + o[1], rz = prz + o[2];
 			const auto key = RegionKey(rx, ry, rz);
 			const auto it = harvested_.find(key);
-			const bool isNear = std::abs(o[0]) <= 1 && std::abs(o[2]) <= 1 && o[1] >= -1 && o[1] <= 0;
+			const bool isNear = std::abs(o[0]) <= 1 && std::abs(o[2]) <= 1 && std::abs(o[1]) <= 1;
 			if (it != harvested_.end() && !(isNear && now - it->second > kRefreshNear)) {
 				continue;
 			}
@@ -323,6 +324,17 @@ namespace skycraft
 		// Bound memory: drop bookkeeping for far-away regions.
 		if (harvested_.size() > offsets_.size() * 4) {
 			harvested_.clear();
+		}
+	}
+
+	void Collision::RefreshNear(const McVec& a_position)
+	{
+		const int rx = static_cast<int>(std::floor(a_position.x / kRegionSize));
+		const int ry = static_cast<int>(std::floor(a_position.y / kRegionSize));
+		const int rz = static_cast<int>(std::floor(a_position.z / kRegionSize));
+		for (int x = rx - 1; x <= rx + 1; ++x) for (int y = ry - 1; y <= ry + 1; ++y) for (int z = rz - 1; z <= rz + 1; ++z) {
+			const std::array<int, 3> region{ x, y, z };
+			if (std::ranges::find(urgent_, region) == urgent_.end()) urgent_.push_back(region);
 		}
 	}
 

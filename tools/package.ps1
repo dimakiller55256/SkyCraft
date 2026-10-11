@@ -23,9 +23,6 @@ $prismSha256 = "ab35a770fb06d89d2ccc098079db5db329fb4e68f42b72babd8b095efde3d2d7
 $prismLicenseUrl = "https://raw.githubusercontent.com/PrismLauncher/PrismLauncher/$prismVersion/LICENSE"
 $fabricApiJar = "fabric-api-0.161.0+26.3.jar"
 $fabricApiUrl = "https://cdn.modrinth.com/data/P7dR8mSH/versions/bNnaTiuM/fabric-api-0.161.0%2B26.3.jar"
-$e4mcJar = "e4mc-fabric-6.2.2-modern.jar"
-$e4mcUrl = "https://cdn.modrinth.com/data/qANg5Jrr/versions/AouleFRY/e4mc-fabric-6.2.2-modern.jar"
-$e4mcSha512 = "01ef0a8c5b76e2cb0effd337bad3350d8807d100d0ec661e01b2ffb20af7b652f756c5eaa11bee233c37905bfd7b573f7a85f3d15bfd2833962c76f02cd59a86"
 $fabricApiSha512 = "ed6b2586d6fde11fde8472f5a527c51e99b67026e46f94d4bfd85e7e28ce5ee299173ee16ad576ceb51f39f98d30a811086a6deb1a86a524859cc16e12da109d"
 
 function Get-Pinned([string]$url, [string]$path, [string]$algorithm, [string]$hash) {
@@ -60,17 +57,8 @@ function New-ZipFromFolder([string]$path, [string]$folder) {
 }
 
 if (-not $NoBuild) {
-    Push-Location "$root\skse"
-    try {
-        cmake --preset default | Out-Null
-        cmake --build --preset release
-        if ($LASTEXITCODE) { throw "the SKSE plugin didn't build" }
-    } finally { Pop-Location }
-    Push-Location "$root\fabric"
-    try {
-        .\gradlew.bat build --no-configuration-cache
-        if ($LASTEXITCODE) { throw "the Fabric mod didn't build" }
-    } finally { Pop-Location }
+    & "$PSScriptRoot\dev.ps1" -Action BuildSkse
+    & "$PSScriptRoot\dev.ps1" -Action BuildFabric
 }
 
 $dll = "$root\skse\build\RelWithDebInfo\SkyCraft.dll"
@@ -82,12 +70,22 @@ foreach ($f in @($dll, $pdb, $jar)) {
 $cache = "$root\.tools\prism"
 Get-Pinned $prismUrl "$cache\$prismZip" SHA256 $prismSha256
 Get-Pinned $fabricApiUrl "$cache\$fabricApiJar" SHA512 $fabricApiSha512
-Get-Pinned $e4mcUrl "$cache\$e4mcJar" SHA512 $e4mcSha512
 Get-Pinned $prismLicenseUrl "$cache\PrismLauncher-$prismVersion-LICENSE.txt" "" ""
 
 $dist = "$root\dist"
 New-Item -ItemType Directory $dist -Force | Out-Null
-Get-ChildItem $dist | Remove-Item -Recurse -Force
+$resolvedDist = (Resolve-Path -LiteralPath $dist).Path
+if ($resolvedDist -ne [System.IO.Path]::GetFullPath((Join-Path $root 'dist')) -or
+    ((Get-Item -LiteralPath $dist).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+    throw 'Refusing to clear dist outside the repository or through a directory link.'
+}
+Get-ChildItem -LiteralPath $dist -Force | ForEach-Object {
+    if (-not $_.FullName.StartsWith($resolvedDist + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+        throw 'Refusing to clear a path outside dist or a directory link.'
+    }
+    Remove-Item -LiteralPath $_.FullName -Recurse -Force
+}
 
 # The bundled Minecraft: Prism (portable), the SkyCraft instance, its mods, Prism's default settings.
 $bundle = "$dist\bundle"
@@ -98,9 +96,8 @@ Copy-Item "$cache\PrismLauncher-$prismVersion-LICENSE.txt" "$bundle\Prism\LICENS
 $mods = "$bundle\Prism\instances\SkyCraft\.minecraft\mods"
 New-Item -ItemType Directory $mods -Force | Out-Null
 Copy-Item "$cache\$fabricApiJar" $mods
-Copy-Item "$cache\$e4mcJar" $mods
 Copy-Item $jar "$mods\skycraft-$version.jar"
-Set-Content "$bundle\bundle-version.txt" "SkyCraft $version, Prism Launcher $prismVersion, $fabricApiJar, $e4mcJar" -NoNewline
+Set-Content "$bundle\bundle-version.txt" "SkyCraft $version, Prism Launcher $prismVersion, $fabricApiJar" -NoNewline
 New-ZipFromFolder "$dist\SkyCraft-Minecraft.zip" $bundle
 Remove-Item -Recurse -Force $bundle
 

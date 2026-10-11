@@ -1,0 +1,227 @@
+// EasyLAN by XiaoXianHW / Darf; YS adaptation for Minecraft 26.3 (2026-10-05).
+// SPDX-License-Identifier: GPL-3.0-only
+package org.xiaoxian.easylan.core.config;
+
+import org.xiaoxian.easylan.core.model.LanRuleProfile;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.Reader;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Properties;
+
+public class EasyLanConfig {
+    private static final String KEY_HTTP_API = "Http-Api";
+    private static final String KEY_LAN_OUTPUT = "Lan-output";
+    private static final String KEY_PVP = "pvp";
+    private static final String KEY_ONLINE_MODE = "online-mode";
+    private static final String KEY_SPAWN_ANIMALS = "spawn-Animals";
+    private static final String KEY_SPAWN_NPCS = "spawn-NPCs";
+    private static final String KEY_ALLOW_FLIGHT = "allow-Flight";
+    private static final String KEY_WHITE_LIST = "whiteList";
+    private static final String KEY_BAN_COMMANDS = "BanCommands";
+    private static final String KEY_OP_COMMANDS = "OpCommands";
+    private static final String KEY_SAVE_COMMANDS = "SaveCommands";
+    private static final String KEY_MOTD = "Motd";
+    private static final String KEY_PORT = "Port";
+    private static final String KEY_MAX_PLAYER = "MaxPlayer";
+
+    private final Properties properties = new Properties();
+    private final Path configPath;
+    private final LanRuleProfile ruleProfile = new LanRuleProfile();
+
+    private String customPort = "25565";
+    private String customMaxPlayer = "20";
+    private String lastError;
+    public synchronized String getLastError() { return lastError; }
+
+    public EasyLanConfig(Path configPath) {
+        this.configPath = configPath;
+        setDefaultProperties();
+        applyProperties();
+    }
+
+    public static EasyLanConfig defaultConfig() {
+        return new EasyLanConfig(Paths.get("config", "easylan.cfg"));
+    }
+
+    public synchronized void load() {
+        if (!Files.exists(configPath)) {
+            save();
+            return;
+        }
+
+        try {
+            byte[] raw = Files.readAllBytes(configPath);
+            properties.clear();
+            loadWithCharsetFallback(raw);
+            lastError = null;
+        } catch (IOException | IllegalArgumentException error) {
+            properties.clear(); lastError = error.getClass().getSimpleName();
+        }
+
+        setDefaultProperties();
+        applyProperties();
+    }
+
+    public synchronized boolean save() {
+        syncPropertiesFromState();
+        try {
+            Path parent = configPath.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+
+            Path temporary = configPath.resolveSibling(configPath.getFileName() + ".tmp");
+            try (OutputStream output = Files.newOutputStream(temporary)) {
+                properties.store(output, "EasyLAN configuration");
+            }
+            try { Files.move(temporary, configPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE); }
+            catch (java.nio.file.AtomicMoveNotSupportedException ignored) { Files.move(temporary, configPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
+            lastError=null; return true;
+        } catch (IOException error) {
+            lastError=error.getClass().getSimpleName(); return false;
+        }
+    }
+
+    private void loadWithCharsetFallback(byte[] raw) throws IOException {
+        Charset bomCharset = detectBom(raw);
+        if (bomCharset != null) {
+            byte[] body = new byte[raw.length - bomLength(bomCharset)];
+            System.arraycopy(raw, bomLength(bomCharset), body, 0, body.length);
+            try (Reader reader = new InputStreamReader(new ByteArrayInputStream(body), bomCharset)) {
+                properties.load(reader);
+                return;
+            }
+        }
+
+        for (Charset charset : new Charset[] { StandardCharsets.UTF_8, Charset.defaultCharset() }) {
+            try (Reader reader = strictReader(raw, charset)) {
+                properties.load(reader);
+                return;
+            } catch (CharacterCodingException malformed) {
+                properties.clear();
+            }
+        }
+
+        try (Reader reader = new InputStreamReader(new ByteArrayInputStream(raw), StandardCharsets.ISO_8859_1)) {
+            properties.load(reader);
+        }
+    }
+
+    private Charset detectBom(byte[] raw) {
+        if (raw.length >= 3 && (raw[0] & 0xFF) == 0xEF && (raw[1] & 0xFF) == 0xBB && (raw[2] & 0xFF) == 0xBF) {
+            return StandardCharsets.UTF_8;
+        }
+        if (raw.length >= 2 && (raw[0] & 0xFF) == 0xFF && (raw[1] & 0xFF) == 0xFE) {
+            return StandardCharsets.UTF_16LE;
+        }
+        if (raw.length >= 2 && (raw[0] & 0xFF) == 0xFE && (raw[1] & 0xFF) == 0xFF) {
+            return StandardCharsets.UTF_16BE;
+        }
+        return null;
+    }
+
+    private int bomLength(Charset charset) {
+        return charset.equals(StandardCharsets.UTF_8) ? 3 : 2;
+    }
+
+    private Reader strictReader(byte[] raw, Charset charset) {
+        return new InputStreamReader(new ByteArrayInputStream(raw), charset.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT));
+    }
+
+    public synchronized String getRawValue(String key) {
+        return properties.getProperty(key);
+    }
+
+    public synchronized void setRawValue(String key, String value) {
+        properties.setProperty(key, value);
+        applyProperties();
+    }
+
+    public synchronized LanRuleProfile getRuleProfile() {
+        return ruleProfile;
+    }
+
+    public synchronized String getCustomPort() {
+        return customPort;
+    }
+
+    public synchronized void setCustomPort(String customPort) {
+        this.customPort = customPort;
+    }
+
+    public synchronized String getCustomMaxPlayer() {
+        return customMaxPlayer;
+    }
+
+    public synchronized void setCustomMaxPlayer(String customMaxPlayer) {
+        this.customMaxPlayer = customMaxPlayer;
+    }
+
+    private void applyProperties() {
+        ruleProfile.setAllowPvp(Boolean.parseBoolean(propertyOrDefault(KEY_PVP, "true")));
+        // A damaged value must never silently disable session verification.
+        ruleProfile.setOnlineMode(!"false".equalsIgnoreCase(propertyOrDefault(KEY_ONLINE_MODE, "true")));
+        ruleProfile.setSpawnAnimals(Boolean.parseBoolean(propertyOrDefault(KEY_SPAWN_ANIMALS, "true")));
+        ruleProfile.setSpawnNpcs(Boolean.parseBoolean(propertyOrDefault(KEY_SPAWN_NPCS, propertyOrDefault(KEY_SPAWN_ANIMALS, "true"))));
+        ruleProfile.setAllowFlight(Boolean.parseBoolean(propertyOrDefault(KEY_ALLOW_FLIGHT, "true")));
+        ruleProfile.setWhiteList(Boolean.parseBoolean(propertyOrDefault(KEY_WHITE_LIST, "false")));
+        ruleProfile.setBanCommands(Boolean.parseBoolean(propertyOrDefault(KEY_BAN_COMMANDS, "false")));
+        ruleProfile.setOpCommands(Boolean.parseBoolean(propertyOrDefault(KEY_OP_COMMANDS, "false")));
+        ruleProfile.setSaveCommands(Boolean.parseBoolean(propertyOrDefault(KEY_SAVE_COMMANDS, "false")));
+        ruleProfile.setHttpApi(Boolean.parseBoolean(propertyOrDefault(KEY_HTTP_API, "true")));
+        ruleProfile.setLanOutput(Boolean.parseBoolean(propertyOrDefault(KEY_LAN_OUTPUT, "true")));
+        ruleProfile.setMotd(propertyOrDefault(KEY_MOTD, "This is a Default EasyLAN Motd!"));
+        customPort = propertyOrDefault(KEY_PORT, "25565");
+        customMaxPlayer = propertyOrDefault(KEY_MAX_PLAYER, "20");
+    }
+
+    private void syncPropertiesFromState() {
+        properties.setProperty(KEY_PVP, String.valueOf(ruleProfile.isAllowPvp()));
+        properties.setProperty(KEY_ONLINE_MODE, String.valueOf(ruleProfile.isOnlineMode()));
+        properties.setProperty(KEY_SPAWN_ANIMALS, String.valueOf(ruleProfile.isSpawnAnimals()));
+        properties.setProperty(KEY_SPAWN_NPCS, String.valueOf(ruleProfile.isSpawnNpcs()));
+        properties.setProperty(KEY_ALLOW_FLIGHT, String.valueOf(ruleProfile.isAllowFlight()));
+        properties.setProperty(KEY_WHITE_LIST, String.valueOf(ruleProfile.isWhiteList()));
+        properties.setProperty(KEY_BAN_COMMANDS, String.valueOf(ruleProfile.isBanCommands()));
+        properties.setProperty(KEY_OP_COMMANDS, String.valueOf(ruleProfile.isOpCommands()));
+        properties.setProperty(KEY_SAVE_COMMANDS, String.valueOf(ruleProfile.isSaveCommands()));
+        properties.setProperty(KEY_HTTP_API, String.valueOf(ruleProfile.isHttpApi()));
+        properties.setProperty(KEY_LAN_OUTPUT, String.valueOf(ruleProfile.isLanOutput()));
+        properties.setProperty(KEY_MOTD, ruleProfile.getMotd());
+        properties.setProperty(KEY_PORT, customPort);
+        properties.setProperty(KEY_MAX_PLAYER, customMaxPlayer);
+    }
+
+    private void setDefaultProperties() {
+        properties.putIfAbsent(KEY_HTTP_API, "true");
+        properties.putIfAbsent(KEY_LAN_OUTPUT, "true");
+        properties.putIfAbsent(KEY_PVP, "true");
+        properties.putIfAbsent(KEY_ONLINE_MODE, "true");
+        properties.putIfAbsent(KEY_SPAWN_ANIMALS, "true");
+        properties.putIfAbsent(KEY_SPAWN_NPCS, properties.getProperty(KEY_SPAWN_ANIMALS, "true"));
+        properties.putIfAbsent(KEY_ALLOW_FLIGHT, "true");
+        properties.putIfAbsent(KEY_WHITE_LIST, "false");
+        properties.putIfAbsent(KEY_BAN_COMMANDS, "false");
+        properties.putIfAbsent(KEY_OP_COMMANDS, "false");
+        properties.putIfAbsent(KEY_SAVE_COMMANDS, "false");
+        properties.putIfAbsent(KEY_MOTD, "This is a Default EasyLAN Motd!");
+        properties.putIfAbsent(KEY_PORT, "25565");
+        properties.putIfAbsent(KEY_MAX_PLAYER, "20");
+    }
+
+    private String propertyOrDefault(String key, String fallback) {
+        return properties.getProperty(key, fallback);
+    }
+}

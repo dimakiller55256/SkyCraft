@@ -100,6 +100,8 @@ namespace skycraft
 		void ConsumeLook(float& a_dx, float& a_dy);
 		// Tells MC to release everything (input focus moved to Skyrim).
 		void ReleaseAll();
+		void ReconcileKeys();
+		bool HasFocus();
 	}
 
 	namespace Input

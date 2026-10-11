@@ -25,6 +25,9 @@ namespace skycraft
 		void WriteWaterGrid(const proto::WaterGrid& a_grid);
 		// Seqlock read of MC -> Skyrim state. Returns false if no consistent snapshot was obtained.
 		bool ReadMcState(proto::McState& a_out) const;
+		void WriteItemRequest(const proto::ItemRequest& a_request);
+		bool ReadItemReply(proto::ItemReply& a_out) const;
+		bool ItemTestWorld() const;
 
 		// Input ring (producer side). Drops the event if MC has fallen a full ring behind.
 		void PushInput(proto::InputType a_type, std::uint16_t a_code, std::int32_t a_a = 0, std::int32_t a_b = 0, std::int32_t a_c = 0);

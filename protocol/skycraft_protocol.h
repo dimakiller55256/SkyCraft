@@ -13,7 +13,7 @@
 namespace skycraft::proto
 {
 	inline constexpr std::uint32_t kMagic = 0x43594B53;  // "SKYC"
-	inline constexpr std::uint32_t kVersion = 11;
+	inline constexpr std::uint32_t kVersion = 12;
 	inline constexpr wchar_t       kMappingName[] = L"Local\\SkyCraft_v1";
 
 	// 1 Minecraft block == 70 Skyrim units (Skyrim player ~128 units tall, MC player 1.8 blocks).
@@ -26,6 +26,8 @@ namespace skycraft::proto
 	inline constexpr std::uint64_t kOffOverlayCtl = 0x300;
 	inline constexpr std::uint64_t kOffOverlaySlotHdr = 0x340;  // 3 x 0x40
 	inline constexpr std::uint64_t kOffWaterGrid = 0x400;       // Skyrim -> MC, see WaterGrid
+	inline constexpr std::uint64_t kOffItemRequest = 0x900;
+	inline constexpr std::uint64_t kOffItemReply = 0xB00;
 	inline constexpr std::uint64_t kOffInputRing = 0x1000;
 	inline constexpr std::uint64_t kOffCollisionRing = 0x20000;
 	inline constexpr std::uint64_t kCollisionRingBytes = 32ull << 20;
@@ -53,12 +55,30 @@ namespace skycraft::proto
 	};
 	static_assert(sizeof(Header) == 0x20);
 
+	// One durable native transaction at a time; seq is a seqlock, strings are UTF-8/NUL.
+	// action: 0 idle, 1 prepare, 2 commit, 3 local notice (count: 1 save required, 2 paused).
+	// status: 1 ready, 2 delivered, 3 rejected, 4 retry.
+	struct ItemRequest {
+		std::uint32_t seq, action, count, localForm;
+		char id[40], character[40], target[40], plugin[128], item[96];
+		std::uint8_t reserved[152];
+	};
+	struct ItemReply {
+		std::uint32_t seq, status;
+		char id[40], target[40], message[160];
+		std::uint32_t localControl;  // Local leased assistant only: 1 forks an isolated test profile.
+		std::uint32_t testWorld;     // Independent atomic publication: actual local item test world.
+	};
+	static_assert(sizeof(ItemRequest) == 0x200);
+	static_assert(sizeof(ItemReply) == 0x100);
+
 	// ---- Skyrim -> MC state @0x100 (seqlock: seq odd while writing) -------------------------
 	enum SkyFlags : std::uint32_t
 	{
 		kSkyInGame = 1u << 0,    // a save is loaded and the player exists
 		kSkyMenuOpen = 1u << 1,  // a Skyrim menu owns input; MC should drop held keys
 		kSkyLoading = 1u << 2,   // loading screen / cell transition in progress
+		kSkyTakeover = 1u << 3,  // Skyrim owns animation/physics (ragdoll, furniture, scene)
 	};
 
 	// Skyrim's water (lakes, rivers, the sea) around the player, for Minecraft to treat as its own
@@ -100,6 +120,7 @@ namespace skycraft::proto
 		kMcDead = 1u << 5,
 		kMcSwimming = 1u << 6,
 		kMcFlying = 1u << 7,
+		kMcBlocking = 1u << 8,  // Minecraft shield is actually raised, after its warm-up
 	};
 
 	struct McState
@@ -247,6 +268,7 @@ namespace skycraft::proto
 		                    // flags = flight pitch (float bits), weapon = arrow texture (0 plain, 1 tipped, 2 spectral)
 		kEvSkillUse = 5,    // the player used a Skyrim skill in Minecraft: formId = Skyrim skill (ActorValue: 9 Block,
 		                    // 10 Smithing, 11 Heavy Armor, 12 Light Armor), a = uses (as Skyrim's AdvanceSkill counts them)
+		kEvHitWeb = 6,     // Minecraft sword click: OnHit only for a nearby crosshair web activator
 	};
 
 	enum HitFlags : std::uint32_t

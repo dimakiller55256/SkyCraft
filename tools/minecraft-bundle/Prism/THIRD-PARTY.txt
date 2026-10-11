@@ -10,9 +10,5 @@ Fabric API (instances/SkyCraft/.minecraft/mods/fabric-api-*.jar)
   License: Apache License 2.0
   Source:  https://github.com/FabricMC/fabric
 
-e4mc (instances/SkyCraft/.minecraft/mods/e4mc-*.jar): lets friends join over the internet
-  License: MIT
-  Source:  https://github.com/vgskye/e4mc-minecraft-architectury
-
 SkyCraft (instances/SkyCraft/.minecraft/mods/skycraft-*.jar)
   License: MIT

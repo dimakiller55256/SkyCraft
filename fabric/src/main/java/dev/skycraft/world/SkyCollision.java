@@ -128,6 +128,12 @@ public final class SkyCollision {
 	public static boolean isKnown(int x, int y, int z) {
 		return KNOWN_REGIONS.contains(regionKey(Math.floorDiv(x, REGION_SIZE), Math.floorDiv(y, REGION_SIZE), Math.floorDiv(z, REGION_SIZE)));
 	}
+	public static boolean movementKnown(net.minecraft.world.phys.AABB box) {
+		int before=epoch;
+		boolean ready=CollisionCoverage.ready(box.minX,box.minY-1,box.minZ,box.maxX,box.maxY,box.maxZ,
+			(x,y,z)->{long key=regionKey(x,y,z);return KNOWN_REGIONS.contains(key) && TRIS.containsKey(key);});
+		return ready && before==epoch;
+	}
 
 	/** True if any Skyrim geometry exists in the 3x3 column below (x, y, z), down to {@code depth} blocks. */
 	public static boolean hasSolidBelow(int x, int y, int z, int depth) {

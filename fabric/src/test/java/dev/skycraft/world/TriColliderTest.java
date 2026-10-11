@@ -8,6 +8,17 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class TriColliderTest {
+	@Test void lateTerrainCanLiftShallowPenetrationButNotRecoverARealFall() {
+		var land = new SkyTri(new float[]{-2,.05f,-2, 2,.05f,2, 2,.05f,-2},0,dev.skycraft.link.Proto.TRI_TERRAIN);
+		assertEquals(.05,TriCollider.terrainAboveFeet(List.of(land),0,0,0,.6),1e-6);
+		assertTrue(Double.isNaN(TriCollider.terrainAboveFeet(List.of(land),0,-3,0,.6)));
+	}
+	@Test void penetrationRecoveryDoesNotUseCeilingsObjectsOrMissingTerrain() {
+		var object = new SkyTri(new float[]{-2,.05f,-2, 2,.05f,2, 2,.05f,-2},0,0);
+		var ceiling = new SkyTri(new float[]{-2,.05f,-2, 2,.05f,-2, 2,.05f,2},0,dev.skycraft.link.Proto.TRI_TERRAIN);
+		assertTrue(Double.isNaN(TriCollider.terrainAboveFeet(List.of(object,ceiling),0,0,0,.6)));
+		assertTrue(Double.isNaN(TriCollider.terrainAboveFeet(List.of(),0,0,0,.6)));
+	}
 	private static final double R = 0.3, H = 1.8, STEP = 0.6;
 	private static final double GRAVITY_TICK = -0.0784; // what Minecraft asks for while standing
 

@@ -1,9 +1,10 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Check', 'BuildFabric', 'BuildSkse')]
+    [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'NetworkSmoke', 'AssistantWorldSmoke')]
     [string]$Action = 'Check',
     [string]$JavaHome,
-    [string]$CMakePath
+    [string]$CMakePath,
+    [string]$GradleUserHome
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,6 +16,22 @@ if (Test-Path -LiteralPath $configPath) {
 }
 if (-not $JavaHome) { $JavaHome = $localConfig.javaHome }
 if (-not $JavaHome) { $JavaHome = $env:JAVA_HOME }
+if (-not $GradleUserHome) { $GradleUserHome = $localConfig.gradleUserHome }
+if (-not $GradleUserHome) { $GradleUserHome = Join-Path $env:LOCALAPPDATA 'SkyCraft\Gradle' }
+$GradleUserHome = [IO.Path]::GetFullPath($GradleUserHome)
+# Skyrim recursively scans Mods during startup. Build caches can exceed its
+# 260-byte path buffer, even when the addon is disabled in MO2.
+$cacheAncestor = $GradleUserHome
+$cacheInsideGame = $false
+while ($cacheAncestor) {
+    if (Test-Path -LiteralPath (Join-Path $cacheAncestor 'SkyrimSE.exe')) {
+        $cacheInsideGame = $true
+        break
+    }
+    $cacheParent = Split-Path -Parent $cacheAncestor
+    if ($cacheParent -eq $cacheAncestor) { break }
+    $cacheAncestor = $cacheParent
+}
 if (-not $CMakePath) { $CMakePath = $localConfig.cmakePath }
 if (-not $CMakePath) {
     $cmakeCommand = Get-Command cmake -ErrorAction SilentlyContinue
@@ -39,6 +56,8 @@ if ($Action -eq 'Check') {
     [pscustomobject]@{
         Repository = $repoRoot
         JavaHome = $JavaHome
+        GradleUserHome = $GradleUserHome
+        GradleCacheOutsideSkyrim = -not $cacheInsideGame
         JdkPresent = [bool]$jdkReady
         VisualStudio2026Cpp = $vsRoot
         CMake = $CMakePath
@@ -50,8 +69,9 @@ if ($Action -eq 'Check') {
     return
 }
 
-if ($Action -eq 'BuildFabric') {
+if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke')) {
     if (-not $jdkReady) { throw 'Set -JavaHome to a JDK 25 folder, or configure .tools/dev-local.json.' }
+    if ($cacheInsideGame) { throw 'Gradle cache must be outside the Skyrim game directory. Set -GradleUserHome or .tools/dev-local.json.' }
     $savedEnvironment = @{}
     foreach ($name in @('JAVA_HOME', 'GRADLE_USER_HOME', 'TEMP', 'TMP')) {
         $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
@@ -60,14 +80,50 @@ if ($Action -eq 'BuildFabric') {
     New-Item -ItemType Directory -Path $tmpPath -Force | Out-Null
     try {
         $env:JAVA_HOME = $JavaHome
-        $env:GRADLE_USER_HOME = Join-Path $repoRoot '.tools\gradle-user-home'
+        $env:GRADLE_USER_HOME = $GradleUserHome
         # The desktop environment's default TEMP failed Java's AF_UNIX loopback.
         # This process-local directory lets Gradle establish its local connection.
         $env:TEMP = $tmpPath
         $env:TMP = $tmpPath
         Push-Location (Join-Path $repoRoot 'fabric')
         try {
-            & .\gradlew.bat build --no-daemon --no-configuration-cache --console=plain
+            if ($Action -eq 'AssistantWorldSmoke') {
+                if (Get-Process -Name SkyrimSE -ErrorAction SilentlyContinue) { throw 'Close Skyrim normally before an isolated shared-memory client check.' }
+                $worldResult = Join-Path $repoRoot '.tools\assistant-world-smoke\assistant-world-smoke-result.txt'
+                if (Test-Path -LiteralPath $worldResult) { Remove-Item -LiteralPath $worldResult }
+                $fixtureResult = Join-Path $repoRoot '.tools\assistant-world-smoke\position-fixture-result.json'
+                New-Item -ItemType Directory -Path (Split-Path -Parent $fixtureResult) -Force | Out-Null
+                if (Test-Path -LiteralPath $fixtureResult) { Remove-Item -LiteralPath $fixtureResult }
+                $python = if ($localConfig.python) { $localConfig.python } else { (Get-Command python -ErrorAction Stop).Source }
+                $fixtureScript = Join-Path $repoRoot 'tools\sync-smoke-fixture.py'
+                $fixture = Start-Process -FilePath $python -ArgumentList @('-u', ('"' + $fixtureScript + '"'), ('"' + $fixtureResult + '"')) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $repoRoot '.tools\assistant-world-smoke\fixture-output.txt') -RedirectStandardError (Join-Path $repoRoot '.tools\assistant-world-smoke\fixture-errors.txt')
+                try {
+                    & .\gradlew.bat -PnetworkSmoke -PassistantWorldSmoke runNetworkSmokeClient --no-daemon --no-configuration-cache --console=plain
+                    if (-not $fixture.WaitForExit(10000)) { throw 'Position fixture did not finish.' }
+                    if (-not (Test-Path -LiteralPath $fixtureResult) -or (Get-Content -LiteralPath $fixtureResult -Raw | ConvertFrom-Json).result -ne 'PASS') { throw 'Unsafe position publication; inspect position-fixture-result.json.' }
+                } finally { if (-not $fixture.HasExited) { $fixture.Kill() }; $fixture.Dispose() }
+                if (-not (Test-Path -LiteralPath $worldResult) -or (Get-Content -LiteralPath $worldResult -Raw).Trim() -ne 'PASS') { throw 'Assistant world smoke failed; inspect .tools/assistant-world-smoke/logs/latest.log.' }
+            } elseif ($Action -eq 'NetworkSmoke') {
+                if (Get-Process -Name SkyrimSE -ErrorAction SilentlyContinue) { throw 'Close Skyrim normally before an isolated shared-memory client check.' }
+                $smokeResult = Join-Path $repoRoot '.tools\network-smoke-game\network-smoke-result.txt'
+                if (Test-Path -LiteralPath $smokeResult) { Remove-Item -LiteralPath $smokeResult }
+                & .\gradlew.bat -PnetworkSmoke runNetworkSmokeClient --no-daemon --no-configuration-cache --console=plain
+                if (-not (Test-Path -LiteralPath $smokeResult) -or
+                    (Get-Content -LiteralPath $smokeResult -Raw).Trim() -ne 'PASS') {
+                    throw 'Minecraft networking smoke check failed; inspect .tools/network-smoke-game/logs/latest.log.'
+                }
+                $traceDir = Join-Path $repoRoot '.tools\network-smoke-game\logs\skycraft-network'
+                $traceFile = Get-ChildItem -LiteralPath $traceDir -Filter 'AUTO-auto-*.jsonl' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                if (-not $traceFile) { throw 'Networking smoke test did not create its diagnostic log.' }
+                $traceEvents = Get-Content -LiteralPath $traceFile.FullName -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json }
+                if (-not ($traceEvents | Where-Object event -eq 'channel_active') -or
+                    -not ($traceEvents | Where-Object { $_.event -eq 'dial_phase' -and $_.phase -eq 'http_connect_result' -and $_.status_code -eq 200 }) -or
+                    -not ($traceEvents | Where-Object event -eq 'trace_closed')) {
+                    throw 'Networking smoke test did not record channel, proxy and logger-shutdown events.'
+                }
+            } else {
+                & .\gradlew.bat build --no-daemon --no-configuration-cache --console=plain
+            }
             if ($LASTEXITCODE -ne 0) { throw "Fabric build failed (exit $LASTEXITCODE)." }
         } finally { Pop-Location }
     } finally {
@@ -82,6 +138,7 @@ if (-not $vsRoot) { throw 'Install Visual Studio 2026 Build Tools with C++ x64/x
 if (-not $cmakeReady) { throw 'CMake is missing. Install the C++ CMake tools component or pass -CMakePath.' }
 if (-not $commonLibReady) { throw 'Run git submodule update --init --recursive.' }
 if (-not $vcpkgReady) { throw 'Clone microsoft/vcpkg into .tools/vcpkg and run bootstrap-vcpkg.bat -disableMetrics.' }
+& (Join-Path $PSScriptRoot 'check-native-api.ps1')
 Push-Location (Join-Path $repoRoot 'skse')
 try {
     & $CMakePath --preset default '-DSKYCRAFT_DEPLOY_DIR='

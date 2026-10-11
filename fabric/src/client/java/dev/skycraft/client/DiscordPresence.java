@@ -20,7 +20,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * Discord Rich Presence: the player's Discord status shows SkyCraft (solo, hosting, or in a friend's
  * world), and while hosting it carries a Join button. A friend with SkyCraft running who clicks it
- * gets the host's e4mc link here, and joins exactly as with /join.
+ * gets the host's advertised address here, and joins exactly as with /join.
  *
  * <p>Talks to the Discord app on this PC over its local IPC pipe (\\.\pipe\discord-ipc-N) from one
  * background thread: frames are sent and, only when some have arrived, read, so a read never blocks
@@ -34,11 +34,17 @@ public final class DiscordPresence {
 	private static final int OP_HANDSHAKE = 0, OP_FRAME = 1, OP_CLOSE = 2, OP_PING = 3, OP_PONG = 4;
 	private static final long START = System.currentTimeMillis() / 1000L;
 
-	private static volatile @Nullable String hostLink;       // our world's e4mc link while it's open to LAN
+	private static volatile @Nullable String hostLink;       // explicitly advertised address (or an optional e4mc link)
 	private static volatile @Nullable String wantedActivity; // SET_ACTIVITY args, as the render thread last described them
 	private static long nextDescribe;
 
 	private DiscordPresence() {
+	}
+
+	/** Explicit host address for direct/proxy networking; never contains proxy credentials. */
+	public static void setHostAddress(@Nullable String address) {
+		hostLink = address;
+		nextDescribe = 0;
 	}
 
 	public static void start() {
@@ -102,7 +108,7 @@ public final class DiscordPresence {
 			assets.addProperty("large_text", "SkyCraft");
 			activity.add("assets", assets);
 			String joinable = hostLink != null ? hostLink : friend;
-			if (hostLink != null) {
+			if (server != null && server.isPublished()) {
 				activity.addProperty("state", "Hosting a world");
 			} else if (friend != null) {
 				activity.addProperty("state", "In a friend's world");

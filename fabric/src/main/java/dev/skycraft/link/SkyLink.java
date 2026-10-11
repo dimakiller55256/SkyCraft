@@ -73,9 +73,43 @@ public final class SkyLink {
 	}
 
 	private static volatile MemorySegment shm;
+
+	public record ItemRequest(int action,int count,int localForm,String id,String character,String target,String plugin,String item) {}
+	public static ItemRequest readItemRequest() {
+		MemorySegment s=shm; if(s==null || !active())return null;
+		long o=OFF_ITEM_REQUEST;
+		for(int attempt=0;attempt<3;attempt++) {
+			int seq=(int)INT.getAcquire(s,o);if((seq&1)!=0)continue;
+			var r=new ItemRequest(s.get(JAVA_INT,o+4),s.get(JAVA_INT,o+8),s.get(JAVA_INT,o+12),itemText(s,o+16,40),itemText(s,o+56,40),itemText(s,o+96,40),itemText(s,o+136,128),itemText(s,o+264,96));
+			VarHandle.acquireFence();if(seq==(int)INT.getAcquire(s,o))return r;
+		}
+		return null;
+	}
+	private static String itemText(MemorySegment s,long o,int cap) {
+		byte[] bytes=s.asSlice(o,cap).toArray(JAVA_BYTE);int n=0;while(n<cap&&bytes[n]!=0)n++;
+		return new String(bytes,0,n,StandardCharsets.UTF_8);
+	}
+	public static void writeItemReply(String id,int status,String target,String message) {
+		writeItemReply(id,status,target,message,0);
+	}
+	public static void beginItemTestProfile(String id){writeItemReply(id,0,"","",1);}
+	public static void itemTestWorld(boolean test){MemorySegment s=shm;if(s!=null)INT.setRelease(s,OFF_ITEM_REPLY+252,test?1:0);}
+	private static void writeItemReply(String id,int status,String target,String message,int control) {
+		MemorySegment s=shm;if(s==null)return;long o=OFF_ITEM_REPLY;
+		int seq=(int)INT.get(s,o);INT.setRelease(s,o,(seq+1)|1);
+		s.set(JAVA_INT,o+4,status);itemText(s,o+8,40,id);itemText(s,o+48,40,target);itemText(s,o+88,160,message);
+		s.set(JAVA_INT,o+248,control);
+		VarHandle.releaseFence();INT.setRelease(s,o,((seq+1)|1)+1);
+	}
+	private static void itemText(MemorySegment s,long o,int cap,String text) {
+		s.asSlice(o,cap).fill((byte)0);byte[] bytes=text.getBytes(StandardCharsets.UTF_8);
+		MemorySegment.copy(bytes,0,s,JAVA_BYTE,o,Math.min(bytes.length,cap-1));
+	}
 	private static long lastOpenAttempt;
 	private static int skyrimPid;
 	private static volatile int generation;
+	private static volatile long nextProcessCheck;
+	private static volatile boolean processPresent;
 
 	private SkyLink() {
 	}
@@ -87,7 +121,23 @@ public final class SkyLink {
 			return false;
 		}
 		long beat = (long) LONG.getAcquire(s, OFF_HEADER + H_SKYRIM_HEARTBEAT);
-		return tickCount() - beat < HEARTBEAT_TIMEOUT_MS;
+		if(tickCount() - beat < HEARTBEAT_TIMEOUT_MS) return true;
+		// Skyrim stops frame heartbeats in its pause menu. That must not switch the LAN
+		// server's physics/flight/input policies or throttle its hidden Minecraft window.
+		long now=System.currentTimeMillis();
+		if(now>=nextProcessCheck) {
+			processPresent=skyrimPid>0 && ProcessHandle.of(skyrimPid).map(ProcessHandle::isAlive).orElse(false);
+			nextProcessCheck=now+1000;
+		}
+		return processPresent;
+	}
+
+	/** Input must stop promptly when Skyrim stops updating, even during its link grace period. */
+	public static boolean inputFresh() {
+		MemorySegment s = shm;
+		if (s == null) return false;
+		long age = tickCount() - (long) LONG.getAcquire(s, OFF_HEADER + H_SKYRIM_HEARTBEAT);
+		return InputSafety.fresh(age);
 	}
 
 	/** Bumps whenever a (new) Skyrim instance is on the other end: everything Skyrim caches must be resent. */
@@ -213,6 +263,9 @@ public final class SkyLink {
 
 		public boolean loading() {
 			return (this.flags & SKY_LOADING) != 0;
+		}
+		public boolean takingOver() {
+			return (this.flags & SKY_TAKEOVER) != 0;
 		}
 	}
 

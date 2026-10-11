@@ -13,8 +13,11 @@ skse/vcpkg_installed/
 .tools/
 # release packaging
 dist/
+reports/
 # local tools and settings
 CMakeUserPresets.json
 fabric/run-guest*/
 __pycache__/
 *.pyc
+
+fabric/logs/

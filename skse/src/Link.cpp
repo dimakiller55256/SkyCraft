@@ -97,6 +97,8 @@ namespace skycraft
 		// Reset everything Skyrim owns so rings and the overlay swap start from a known state.
 		auto* header = At<proto::Header>(proto::kOffHeader);
 		std::memset(base_ + proto::kOffSkyState, 0, sizeof(proto::SkyState));
+		std::memset(base_ + proto::kOffItemRequest, 0, sizeof(proto::ItemRequest));
+		std::memset(base_ + proto::kOffItemReply, 0, sizeof(proto::ItemReply));
 		std::memset(base_ + proto::kOffOverlayCtl, 0, 0x100);
 		std::memset(base_ + proto::kOffInputRing, 0, proto::kInputRingDataOff);
 		std::memset(base_ + proto::kOffCollisionRing, 0, proto::kColRingDataOff);
@@ -111,6 +113,33 @@ namespace skycraft
 
 		logger::info("shared memory {} ({} MB, {})", "Local\\SkyCraft_v1", size >> 20, existed ? "reused" : "created");
 		return true;
+	}
+
+	void Link::WriteItemRequest(const proto::ItemRequest& request)
+	{
+		if (!base_) return;
+		auto* dest = At<proto::ItemRequest>(proto::kOffItemRequest);
+		auto seq = Atomic(dest->seq);
+		const auto next = seq.load(std::memory_order_relaxed) + 1;
+		seq.store(next | 1u, std::memory_order_release);
+		std::memcpy(reinterpret_cast<char*>(dest) + 4, reinterpret_cast<const char*>(&request) + 4, sizeof(request) - 4);
+		seq.store((next | 1u) + 1, std::memory_order_release);
+	}
+	bool Link::ReadItemReply(proto::ItemReply& out) const
+	{
+		if (!base_) return false;
+		auto* src = At<proto::ItemReply>(proto::kOffItemReply);
+		for (int attempt = 0; attempt < 3; ++attempt) {
+			const auto start = Atomic(src->seq).load(std::memory_order_acquire);
+			if (start & 1u) continue;
+			std::memcpy(&out, src, sizeof(out));
+			std::atomic_thread_fence(std::memory_order_acquire);
+			if (start == Atomic(src->seq).load(std::memory_order_acquire)) return true;
+		}
+		return false;
+	}
+	bool Link::ItemTestWorld() const {
+		return base_ && Atomic(At<proto::ItemReply>(proto::kOffItemReply)->testWorld).load(std::memory_order_acquire)==1;
 	}
 
 	bool Link::McAlive() const

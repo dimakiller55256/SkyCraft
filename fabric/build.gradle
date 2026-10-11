@@ -4,13 +4,6 @@ plugins {
 }
 
 repositories {
-	// Modrinth: e4mc (share a world over the internet, for multiplayer testing).
-	maven {
-		url = "https://api.modrinth.com/maven"
-		content {
-			includeGroup "maven.modrinth"
-		}
-	}
 	// Add repositories to retrieve artifacts from in here.
 	// You should only use this when depending on other mods because
 	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
@@ -34,6 +27,7 @@ loom {
 			sourceSet sourceSets.client
 		}
 	}
+
 }
 
 dependencies {
@@ -44,9 +38,6 @@ dependencies {
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
-	// e4mc 6.2.2 (Fabric, 26.1-26.3): "Open to LAN" gives a link friends can join over the internet.
-	runtimeOnly "maven.modrinth:e4mc:AouleFRY"
-
 	testImplementation platform("org.junit:junit-bom:5.11.4")
 	testImplementation "org.junit.jupiter:junit-jupiter"
 	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
@@ -55,6 +46,60 @@ dependencies {
 test {
 	useJUnitPlatform()
 	testLogging { events "passed", "failed"; exceptionFormat "full" }
+}
+
+// Opt-in integration client, excluded from the release JAR and ordinary development runs.
+if (providers.gradleProperty("networkSmoke").isPresent()) {
+	sourceSets {
+		networkSmoke {
+			compileClasspath += sourceSets.client.compileClasspath + sourceSets.main.output + sourceSets.client.output
+			runtimeClasspath += sourceSets.client.runtimeClasspath
+		}
+	}
+	loom {
+		mods {
+			"skycraft-network-smoke" { sourceSet sourceSets.networkSmoke }
+		}
+		runs {
+				networkSmokeClient {
+				client()
+				sourceSet = sourceSets.networkSmoke.name
+					runDirectory = file(providers.gradleProperty("assistantWorldSmoke").isPresent() ? "../.tools/assistant-world-smoke" : "../.tools/network-smoke-game")
+					vmArgs "--enable-native-access=ALL-UNNAMED", "-Dskycraft.startHidden=true", "-Dskycraft.quitWithSkyrim=false", "-Dskycraft.discordAppId=0", "-Dskycraft.link=Local\\SkyCraft_network_smoke"
+					if (providers.gradleProperty("assistantWorldSmoke").isPresent()) vmArgs "-Dskycraft.assistantWorldSmoke=true", "-Dskycraft.link=Local\\SkyCraft_world_smoke"
+				programArgs "--username", "NetworkSmoke"
+			}
+		}
+	}
+	if (providers.gradleProperty('gameplaySmoke').isPresent()) {
+		loom.runs {
+			gameplayHostClient {
+				client(); sourceSet = sourceSets.networkSmoke.name
+				runDirectory = '../.tools/gameplay-host'
+				vmArgs '-Xmx512m', '-XX:ActiveProcessorCount=2', '-XX:ReservedCodeCacheSize=128m', '--enable-native-access=ALL-UNNAMED', '-Dskycraft.gameplaySmokeRole=host', '-Dskycraft.startHidden=true', '-Dskycraft.quitWithSkyrim=false', '-Dskycraft.discordAppId=0', '-Dskycraft.link=Local\\SkyCraft_gameplay_host'
+				programArgs '--username', 'GameplayHost'
+			}
+			gameplayGuestClient {
+				client(); sourceSet = sourceSets.networkSmoke.name
+				runDirectory = '../.tools/gameplay-client'
+				vmArgs '-Xmx512m', '-XX:ActiveProcessorCount=2', '-XX:ReservedCodeCacheSize=128m', '--enable-native-access=ALL-UNNAMED', '-Dskycraft.gameplaySmokeRole=client', '-Dskycraft.startHidden=true', '-Dskycraft.quitWithSkyrim=false', '-Dskycraft.discordAppId=0', '-Dskycraft.link=Local\\SkyCraft_gameplay_client'
+				programArgs '--username', 'GameplayGuest'
+			}
+		}
+		tasks.register('exportGameplayLaunch') {
+			def exports = [tasks.named('runGameplayHostClient'), tasks.named('runGameplayGuestClient')]
+			dependsOn exports.collectMany { it.get().taskDependencies.getDependencies(it.get()) }
+			doLast { exports.each { provider ->
+				def run = provider.get(); def jvm = run.allJvmArgs.findAll { !it.startsWith('@') }
+				def launchArgs = jvm + ['-classpath',run.classpath.asPath,run.mainClass.get()] + run.args + ['--username', run.name.contains('Host')?'GameplayHost':'GameplayGuest']
+				def argsFile = file("../.tools/${run.name}.args")
+				argsFile.text = launchArgs.collect { '"' + it.replace('\\','\\\\').replace('"','\\"') + '"' }.join('\n')
+				file("../.tools/${run.name}.json").text = groovy.json.JsonOutput.toJson([java:run.javaLauncher.get().executablePath.asFile.absolutePath,
+					args:['@'+argsFile.absolutePath],
+					workingDirectory:file('../.tools/gameplay-' + (run.name.contains('Host')?'host':'client')).absolutePath])
+			} }
+		}
+	}
 }
 
 processResources {

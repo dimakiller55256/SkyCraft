@@ -12,8 +12,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class FramerateLimitTrackerMixin {
 	@Inject(method = "getFramerateLimit", at = @At("HEAD"), cancellable = true)
 	private void skycraft$unlimited(CallbackInfoReturnable<Integer> cir) {
-		if (SkyClient.linked()) {
-			cir.setReturnValue(260);
+		if (SkyClient.tookOver()) {
+			cir.setReturnValue(dev.skycraft.link.SkyLink.inputFresh()?260:60);
 		}
 	}
 }

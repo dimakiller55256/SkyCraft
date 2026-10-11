@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class PlayerEdgeMixin {
 	@Inject(method = "maybeBackOffFromEdge", at = @At("HEAD"), cancellable = true)
 	private void skycraft$crouchWalkAnywhere(Vec3 delta, MoverType moverType, CallbackInfoReturnable<Vec3> cir) {
-		if (SkyLink.active()) {
+		if (SkyLink.segment()!=null) {
 			cir.setReturnValue(delta);
 		}
 	}

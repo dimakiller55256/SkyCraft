@@ -273,4 +273,17 @@ public final class TriCollider {
 		double f = floor(tris, x, y, z, false, maxAbove);
 		return f == Double.NEGATIVE_INFINITY ? Double.NaN : f;
 	}
+
+	/** A newly streamed land surface may appear slightly above previously falling feet. */
+	public static double terrainAboveFeet(List<SkyTri> tris,double x,double y,double z,double limit) {
+		double best=Double.NaN;
+		for(SkyTri t:tris) {
+			if(!t.terrain || !t.walkable || t.ny<=0)continue;
+			for(double[] sample:FLOOR_SAMPLES) {
+				double h=t.heightAt(x+sample[0],z+sample[1]);
+				if(Double.isFinite(h) && h>y+EPS && h<=y+limit && (Double.isNaN(best)||h>best))best=h;
+			}
+		}
+		return best;
+	}
 }

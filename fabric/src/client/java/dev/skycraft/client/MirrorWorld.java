@@ -18,52 +18,39 @@ public final class MirrorWorld {
 	private static final ResourceKey<WorldPreset> PRESET =
 		ResourceKey.create(Registries.WORLD_PRESET, Identifier.fromNamespaceAndPath(SkyCraft.MOD_ID, "mirror"));
 	private static boolean attempted;
+	private static long joinRequest;
+	public static long joinRequest() { return joinRequest; }
 	private static long lastLog;
-	// /join: a friend's world for this session (the e4mc link their "Open to LAN" shows); null: our own.
+	private static boolean readConfiguredJoin = true;
+	// A friend's world for this session; null: our own.
 	private static @org.jspecify.annotations.Nullable String sessionJoin;
+	private static String localWorldName = SkyCraft.WORLD_NAME;
+	/** Session-only disposable item test world; ordinary SkyCraft save is left untouched. */
+	public static void itemTestWorld(Minecraft minecraft) {
+		sessionJoin=null;readConfiguredJoin=false;localWorldName="SkyCraft-Items-Test";
+		pendingNote="Тест предметов: открыт отдельный мир Minecraft. Используйте отдельное сохранение Skyrim. После теста закройте обе игры.";
+		leaveWorld(minecraft);
+	}
 	// Shown in chat once the player is in a world again (why they're back in their own, ...).
 	private static @org.jspecify.annotations.Nullable String pendingNote;
 
 	private MirrorWorld() {
 	}
 
-	/**
-	 * The address in config/skycraft.properties ({@code join=abc-def.e4mc.link}), if any. Written
-	 * with the template below the first time, so there's something to fill in.
-	 */
-	private static @org.jspecify.annotations.Nullable String joinAddress(Minecraft minecraft) {
-		java.nio.file.Path file = minecraft.gameDirectory.toPath().resolve("config").resolve("skycraft.properties");
-		java.util.Properties props = new java.util.Properties();
-		try {
-			if (!java.nio.file.Files.exists(file)) {
-				java.nio.file.Files.createDirectories(file.getParent());
-				java.nio.file.Files.writeString(file, """
-					# SkyCraft
-					# To play in a friend's world instead of your own: put their address after join=
-					# (the link e4mc shows them when they open their world to LAN), then restart Minecraft.
-					join=
-					""");
-			}
-			try (var in = java.nio.file.Files.newBufferedReader(file)) {
-				props.load(in);
-			}
-		} catch (java.io.IOException e) {
-			SkyCraft.LOG.warn("SkyCraft: couldn't read {}", file, e);
-			return null;
-		}
-		String join = props.getProperty("join", "").trim();
-		return join.isEmpty() ? null : join;
-	}
-
-	/** /join: leave this world and play in a friend's (their e4mc link, or any server address). */
+	/** /join: validate before leaving the current world. */
 	public static void joinFriend(Minecraft minecraft, String link) {
-		// People paste all sorts: "https://abc-def.e4mc.link/", " abc-def.e4mc.link ".
-		String address = link.trim().replaceFirst("^[A-Za-z]+://", "").replaceAll("/+$", "");
-		if (address.isEmpty()) {
+		String address;
+		try {
+			address = dev.skycraft.network.Endpoint.parse(link).authority();
+			NetworkClient.config(minecraft); // Invalid proxy settings must not unload the current world.
+		} catch (java.io.IOException | IllegalArgumentException e) {
+			minecraft.gui.hud.getChat().addClientSystemMessage(net.minecraft.network.chat.Component.literal("SkyCraft: " + e.getMessage()));
 			return;
 		}
 		SkyCraft.LOG.info("SkyCraft: /join {}", address);
+		joinRequest++;
 		sessionJoin = address;
+		readConfiguredJoin = false;
 		leaveWorld(minecraft);
 	}
 
@@ -84,11 +71,15 @@ public final class MirrorWorld {
 		}
 		SkyCraft.LOG.info("SkyCraft: /leave {}", sessionJoin);
 		sessionJoin = null;
+		readConfiguredJoin = false;
 		pendingNote = "Back in your own world.";
 		leaveWorld(minecraft);
 	}
 
 	private static void leaveWorld(Minecraft minecraft) {
+		NetworkDiagnostics.position("before_world_leave", minecraft);
+		SkyClient.worldTransition();
+		NetworkClient.cancel();
 		attempted = false;
 		minecraft.disconnectFromWorld(net.minecraft.client.multiplayer.ClientLevel.DEFAULT_QUIT_MESSAGE);
 		minecraft.gui.setScreen(new TitleScreen());  // openWhenReady takes it from the title screen
@@ -96,6 +87,7 @@ public final class MirrorWorld {
 
 	/** Every client tick: a note for the player once they're in a world again. */
 	public static void tick(Minecraft minecraft) {
+		NetworkClient.tick(minecraft);
 		if (pendingNote != null && minecraft.player != null) {
 			minecraft.gui.hud.getChat().addClientSystemMessage(net.minecraft.network.chat.Component.literal(pendingNote));
 			pendingNote = null;
@@ -103,15 +95,16 @@ public final class MirrorWorld {
 	}
 
 	public static void openWhenReady(Minecraft minecraft) {
+		if (attempted && sessionJoin != null && minecraft.level == null && minecraft.gui.screen() instanceof TitleScreen) {
+			connectionFailed(minecraft, "Подключение отменено.");
+			return;
+		}
 		// Couldn't reach a friend's world, or it closed under us: back to our own, and say why.
 		if (minecraft.gui.screen() instanceof net.minecraft.client.gui.screens.DisconnectedScreen && minecraft.level == null) {
-			pendingNote = sessionJoin != null
-				? "Couldn't stay in " + sessionJoin + " (check the link, and that your friend's world is still open to LAN). You're back in your own world."
-				: "Disconnected. You're back in your own world.";
-			SkyCraft.LOG.info("SkyCraft: disconnected; back to the mirror world");
-			sessionJoin = null;
-			attempted = false;
-			minecraft.gui.setScreen(new TitleScreen());
+			var details = ((dev.skycraft.client.mixin.DisconnectedScreenAccessor) minecraft.gui.screen()).skycraft$details();
+			NetworkClient.recordFailure("disconnect_screen", details.reason().getString(), "minecraft_disconnect");
+			connectionFailed(minecraft, NetworkClient.lastFailure() != null ? NetworkClient.lastFailure()
+				: "Соединение закрыто. Проверьте адрес, доступность хоста и журнал Minecraft.");
 			return;
 		}
 		if (attempted && minecraft.level == null && minecraft.gui.screen() != null && System.currentTimeMillis() - lastLog > 5000) {
@@ -134,34 +127,56 @@ public final class MirrorWorld {
 		}
 		TitleScreen title = (TitleScreen) minecraft.gui.screen();
 		attempted = true;
-		// Multiplayer: join a friend's world (their e4mc link, or any server address) instead.
-		String join = sessionJoin != null ? sessionJoin : joinAddress(minecraft);
+		// Read auto-join only once: /leave or a failed join must return to our world.
+		if (readConfiguredJoin) {
+			readConfiguredJoin = false;
+			try {
+				String configured = NetworkClient.config(minecraft).join();
+				if (!configured.isEmpty()) sessionJoin = dev.skycraft.network.Endpoint.parse(configured).authority();
+			} catch (java.io.IOException | IllegalArgumentException e) {
+				pendingNote = "SkyCraft: настройки сети: " + e.getMessage() + ". Открыт свой мир.";
+			}
+		}
+		String join = sessionJoin;
 		if (join != null) {
 			SkyCraft.LOG.info("SkyCraft: joining {}", join);
 			pendingNote = "Joined " + join + ". Type /leave to go back to your own world.";
-			net.minecraft.client.gui.screens.ConnectScreen.startConnecting(title, minecraft, net.minecraft.client.multiplayer.resolver.ServerAddress.parseString(join),
-				new net.minecraft.client.multiplayer.ServerData("SkyCraft", join, net.minecraft.client.multiplayer.ServerData.Type.OTHER), false, null);
+			NetworkClient.connect(minecraft, title, dev.skycraft.network.Endpoint.parse(join));
 			return;
 		}
-		if (minecraft.getLevelSource().levelExists(SkyCraft.WORLD_NAME)) {
+		if (minecraft.getLevelSource().levelExists(localWorldName)) {
 			SkyCraft.LOG.info("SkyCraft: opening mirror world");
-			minecraft.createWorldOpenFlows().openWorld(SkyCraft.WORLD_NAME, () -> minecraft.gui.setScreen(title));
+			minecraft.createWorldOpenFlows().openWorld(localWorldName, () -> minecraft.gui.setScreen(title));
 			return;
 		}
 		SkyCraft.LOG.info("SkyCraft: creating mirror world");
 		LevelSettings settings = new LevelSettings(
-			SkyCraft.WORLD_NAME,
+			localWorldName,
 			GameType.SURVIVAL,
 			new LevelSettings.DifficultySettings(Difficulty.NORMAL, false, false),
 			true,
 			WorldDataConfiguration.DEFAULT
 		);
 		minecraft.createWorldOpenFlows().createFreshLevel(
-			SkyCraft.WORLD_NAME,
+			localWorldName,
 			settings,
 			new WorldOptions(0L, false, false),
 			registries -> registries.lookupOrThrow(Registries.WORLD_PRESET).getOrThrow(PRESET).value().createWorldDimensions(),
 			title
 		);
+	}
+
+	public static void connectionFailed(Minecraft minecraft, String reason) {
+		NetworkClient.recordFailure("recovery", reason, "connection_failed");
+		SkyClient.worldTransition();
+		NetworkDiagnostics.position("connection_failed", minecraft);
+		NetworkDiagnostics.event("return_to_own_world", java.util.Map.of("attempt_id", NetworkClient.activeAttempt()));
+		pendingNote = "SkyCraft: " + reason + " Возвращаюсь в свой мир.";
+		SkyCraft.LOG.info("SkyCraft network: {}", pendingNote);
+		sessionJoin = null;
+		readConfiguredJoin = false;
+		attempted = false;
+		NetworkClient.cancel();
+		minecraft.gui.setScreen(new TitleScreen());
 	}
 }

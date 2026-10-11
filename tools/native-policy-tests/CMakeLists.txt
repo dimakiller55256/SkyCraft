@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.24)
+project(SkyCraftCombatPolicyTests LANGUAGES CXX)
+add_executable(CombatPolicyTest main.cpp)
+target_compile_features(CombatPolicyTest PRIVATE cxx_std_20)
+target_include_directories(CombatPolicyTest PRIVATE ../../skse/src)

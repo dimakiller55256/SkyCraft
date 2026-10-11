@@ -55,6 +55,7 @@ public abstract class AbstractArrowMixin {
 			return;
 		}
 		AbstractArrow self = (AbstractArrow) (Object) this;
+		if (self.getOwner() instanceof net.minecraft.server.level.ServerPlayer owner && !dev.skycraft.net.SkyNet.isHost(owner)) return;
 		Vec3 v = self.getDeltaMovement();
 		float yaw = (float) (Mth.atan2(v.x, v.z) * Mth.RAD_TO_DEG);
 		float pitch = (float) (Mth.atan2(v.y, v.horizontalDistance()) * Mth.RAD_TO_DEG);

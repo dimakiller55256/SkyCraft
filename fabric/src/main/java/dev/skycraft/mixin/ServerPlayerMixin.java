@@ -28,6 +28,7 @@ public abstract class ServerPlayerMixin {
 	private void skycraft$diesInSkyrim(DamageSource source, CallbackInfo ci) {
 		ServerPlayer self = (ServerPlayer) (Object) this;
 		int attacker = SkyCombat.attackerFormId(source);
+		SkyCraft.LOG.info("SkyCraft death evidence: source {}, pos {} {} {}, fall {}, ground {}, health {}, host {}",source.getMsgId(),self.getX(),self.getY(),self.getZ(),self.fallDistance,self.onGround(),self.getHealth(),dev.skycraft.net.SkyNet.isHost(self));
 		if (!dev.skycraft.net.SkyNet.isHost(self)) {
 			if (net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(self, dev.skycraft.net.SkyNet.Died.TYPE)) {
 				net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(self, new dev.skycraft.net.SkyNet.Died(attacker));

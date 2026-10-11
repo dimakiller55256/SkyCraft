@@ -125,6 +125,7 @@ namespace skycraft::Dig
 		}
 		NoteChanged(hdr->sx, hdr->sy, hdr->sz, it != sections.end() ? &it->second : nullptr, &bits);
 		sections[key] = bits;
+		logger::info("dig: received world {:08X} section {} {} {}: {} cells (total {})", hdr->worldId, hdr->sx, hdr->sy, hdr->sz, hdr->count, dugCount.load());
 	}
 
 	void SetWorld(std::uint32_t a_worldId)

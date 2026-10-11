@@ -21,13 +21,20 @@ Java выбирается через `-JavaHome`, игнорируемый `.too
 ```json
 {
   "javaHome": "D:\\path\\to\\jdk-25",
-  "cmakePath": ""
+  "cmakePath": "",
+  "gradleUserHome": "D:\\SkyCraftDev\\gradle-user-home"
 }
 ```
 
 Текущая установка Prism уже содержит Microsoft OpenJDK 25.0.1. Путь к нему
 сохранён только в локальном конфиге. Gradle 9.7.1 загружается штатным wrapper;
-его кэш находится в `.tools/gradle-user-home`. Скрипт задаёт временную папку
+кэш выбирается через `-GradleUserHome` или `gradleUserHome` в локальном конфиге.
+По умолчанию это `%LOCALAPPDATA%\SkyCraft\Gradle`, вне папки игры.
+Старое размещение `.tools/gradle-user-home` внутри Skyrim использовать нельзя:
+рекурсивный обход `Mods` при старте игры упирается в её буфер пути на 260 байт.
+Подробности диагностики — в [YS-STARTUP.md](YS-STARTUP.md).
+Исходники и будущие каталоги сборки также рекомендуется держать вне каталога игры.
+Скрипт задаёт временную папку
 `.tools/tmp` на время сборки: это устранило наблюдавшуюся ошибку Java
 `Unable to establish loopback connection` / `UnixDomainSockets.connect0`.
 Причина сбоя в стандартной TEMP глубже не установлена.

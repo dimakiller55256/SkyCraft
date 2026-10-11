@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/XiaoXianHW/EasyLAN",
+  "branch": "fabric/1.20.6-1.21.11",
+  "baseVersion": "1.6a",
+  "archiveSha256": "54262baac5474ad142692413cea5fb79b956b3c825cbe9dfce47a0e3d2ea06e3",
+  "licenseDeclaration": "versions/1.21.11/project/gradle.properties: mod_license=GNU General Public License v3",
+  "adaptationVersion": "1.6a-ys.26.3.1",
+  "commit": "6e3effad7a76bddb49ac901560683300325765f0"
+}

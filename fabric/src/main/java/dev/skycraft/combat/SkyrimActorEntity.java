@@ -29,6 +29,16 @@ public class SkyrimActorEntity extends LivingEntity {
 	private static final EntityDataAccessor<Integer> FORM_ID = SynchedEntityData.defineId(SkyrimActorEntity.class, EntityDataSerializers.INT);
 	private static final EntityDataAccessor<Float> WIDTH = SynchedEntityData.defineId(SkyrimActorEntity.class, EntityDataSerializers.FLOAT);
 	private static final EntityDataAccessor<Float> HEIGHT = SynchedEntityData.defineId(SkyrimActorEntity.class, EntityDataSerializers.FLOAT);
+	private static final EntityDataAccessor<String> OWNER = SynchedEntityData.defineId(SkyrimActorEntity.class, EntityDataSerializers.STRING);
+	private static java.util.function.Predicate<SkyrimActorEntity> localPick = actor -> true;
+	public static void setLocalPick(java.util.function.Predicate<SkyrimActorEntity> predicate) { localPick=predicate; }
+	public boolean ownedBy(java.util.UUID owner) { return owner.toString().equals(this.entityData.get(OWNER)); }
+	public void setOwner(java.util.UUID owner) { this.entityData.set(OWNER,owner.toString()); }
+	@Override public boolean isPickable() { return (!this.level().isClientSide() || localPick.test(this)) && super.isPickable(); }
+	@Override public boolean hurtServer(ServerLevel level,DamageSource source,float damage) {
+		if(source.getEntity() instanceof net.minecraft.world.entity.player.Player player && !ownedBy(player.getUUID())) return false;
+		return super.hurtServer(level,source,damage);
+	}
 
 	// This tick's hit, flushed to Skyrim by SkyCombat after all attacks for the tick have landed
 	// (Player.attack adds its sprint/enchantment knockback after hurtServer returns).
@@ -61,6 +71,7 @@ public class SkyrimActorEntity extends LivingEntity {
 		builder.define(FORM_ID, 0);
 		builder.define(WIDTH, 0.6F);
 		builder.define(HEIGHT, 1.8F);
+		builder.define(OWNER, "");
 	}
 
 	public void setSize(float width, float height) {

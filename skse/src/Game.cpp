@@ -2,6 +2,7 @@
 
 #include "Collision.h"
 #include "Dig.h"
+#include "Items.h"
 #include "Perf.h"
 
 namespace skycraft
@@ -383,7 +384,15 @@ namespace skycraft
 		// up again from wherever Skyrim leaves them.
 		const char* SkyrimTakeover(RE::PlayerCharacter* a_player)
 		{
-			if (a_player->AsActorState()->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal) {
+			auto* actorState = a_player->AsActorState();
+			// Read the state directly: pinned CommonLib's IsEssentialDown uses
+			// RELOCATION_ID(48460, 0), so calling it on AE jumps to a null address.
+			// Also release control during knockdown/get-up transitions before physics
+			// starts driving the body. These inline accessors need no game relocation.
+			if (actorState->IsBleedingOut() || actorState->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) {
+				return "knockdown/ragdoll";
+			}
+			if (actorState->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal) {
 				return "furniture";
 			}
 			if (a_player->IsOnMount()) {
@@ -552,11 +561,12 @@ namespace skycraft
 
 			auto*      cell = a_player->GetParentCell();
 			const bool loading = !cell || !a_player->Is3DLoaded() || ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
-			const bool menu = AnyBlockingMenuOpen(ui);
+			const bool menu = AnyBlockingMenuOpen(ui) || !Input::HasFocus();
 			if ((menu || loading) && !st.skyrimMenuOpen) {
 				Input::ReleaseAll();
 			}
 			st.skyrimMenuOpen = menu || loading;
+			if (!st.skyrimMenuOpen) Input::ReconcileKeys();
 
 			// World identity: exterior worldspace or interior cell. A change wipes MC's collision.
 			if (cell) {
@@ -574,17 +584,18 @@ namespace skycraft
 			}
 
 			// Skyrim moved the player itself (load door, fast travel, script, loading a save).
+			const char* takeoverNow = a_player->IsDead() ? nullptr : SkyrimTakeover(a_player);
 			const auto current = a_player->GetPosition();
 			if (loading) {
 				teleportPending = true;
 				haveLastSet = false;
 				settleTimer = kSettleSeconds;
-			} else if (haveLastSet && current.GetDistance(lastSetPos) > kSkyrimTeleportThreshold) {
+			} else if (!takeoverNow && haveLastSet && current.GetDistance(lastSetPos) > kSkyrimTeleportThreshold) {
 				logger::info("Skyrim moved the player ({:.0f} units); resyncing Minecraft", current.GetDistance(lastSetPos));
 				teleportPending = true;
 				haveLastSet = false;
 			}
-			if (teleportPending && !loading) {
+			if (teleportPending && !loading && !takeoverNow) {
 				++teleportSeq;
 				teleportPending = false;
 				st.yaw = HeadingToMcYaw(a_player->data.angle.z);
@@ -611,7 +622,6 @@ namespace skycraft
 			// around them. If it's holding somewhere Skyrim's player isn't, that ground never comes:
 			// send it again to where Skyrim's player really is.
 			static const char* takeover = nullptr;
-			const char*        takeoverNow = a_player->IsDead() ? nullptr : SkyrimTakeover(a_player);
 			if ((takeoverNow != nullptr) != (takeover != nullptr)) {
 				if (takeoverNow) {
 					logger::info("Skyrim takes the player ({})", takeoverNow);
@@ -654,6 +664,7 @@ namespace skycraft
 			st.mcGuiScale = haveMc ? static_cast<int>(mc.guiScale) : 0;
 			Input::SetActivatePromptKey(puppet);
 			Combat::PerFrame(a_player, puppet, a_delta);
+			Items::PerFrame(a_player);
 			WorldRender::UpdateRagdoll(a_player, haveMc && st.mcInWorld);
 			if (puppet) {
 				NpcBlocks::PushActorsOut(a_player, a_delta);
@@ -976,7 +987,7 @@ namespace skycraft
 
 			// Tell Minecraft where Skyrim's player is and where they're looking.
 			proto::SkyState sky{};
-			sky.flags = (cell ? proto::kSkyInGame : 0u) | (menu ? proto::kSkyMenuOpen : 0u) | (loading ? proto::kSkyLoading : 0u);
+			sky.flags = (cell ? proto::kSkyInGame : 0u) | (menu ? proto::kSkyMenuOpen : 0u) | (loading ? proto::kSkyLoading : 0u) | (takeover ? proto::kSkyTakeover : 0u);
 			const auto skyMc = SkyToMc(current);
 			sky.worldId = worldId;
 			sky.collisionEpoch = epoch;

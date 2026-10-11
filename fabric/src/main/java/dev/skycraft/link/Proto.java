@@ -8,7 +8,7 @@ public final class Proto {
 	}
 
 	public static final int MAGIC = 0x43594B53;
-	public static final int VERSION = 11;
+	public static final int VERSION = 12;
 	// A second client on the same PC (multiplayer testing) talks to its own stand-in Skyrim:
 	// -Dskycraft.link=Local\SkyCraft_guest (see tools/fake_guest.py).
 	public static final String MAPPING_NAME = System.getProperty("skycraft.link", "Local\\SkyCraft_v1");
@@ -18,6 +18,8 @@ public final class Proto {
 	public static final long OFF_SKY_STATE = 0x100;
 	public static final long OFF_MC_STATE = 0x200;
 	public static final long OFF_WATER_GRID = 0x400;
+	public static final long OFF_ITEM_REQUEST = 0x900;
+	public static final long OFF_ITEM_REPLY = 0xB00;
 	public static final int WATER_GRID_SIZE = 16;
 	public static final long WG_SEQ = 0x0, WG_ORIGIN_X = 0x4, WG_ORIGIN_Z = 0x8, WG_WORLD_ID = 0xC, WG_SURFACE = 0x10;
 	public static final long OFF_OVERLAY_CTL = 0x300;
@@ -69,6 +71,7 @@ public final class Proto {
 	public static final int EV_EXPLOSION = 3;
 	public static final int EV_ARROW_STUCK = 4;
 	public static final int EV_SKILL_USE = 5;
+	public static final int EV_HIT_WEB = 6;
 	// Skyrim skills (ActorValue) Minecraft reports use of; weapon skills come from EV_HIT_ACTOR.
 	public static final int SKILL_BLOCK = 9;
 	public static final int SKILL_SMITHING = 10;
@@ -148,6 +151,7 @@ public final class Proto {
 	public static final int SKY_IN_GAME = 1;
 	public static final int SKY_MENU_OPEN = 1 << 1;
 	public static final int SKY_LOADING = 1 << 2;
+	public static final int SKY_TAKEOVER = 1 << 3;
 
 	// McState (relative to OFF_MC_STATE)
 	public static final long MS_SEQ = 0x00;
@@ -189,6 +193,7 @@ public final class Proto {
 	public static final int MC_DEAD = 1 << 5;
 	public static final int MC_SWIMMING = 1 << 6;
 	public static final int MC_FLYING = 1 << 7;
+	public static final int MC_BLOCKING = 1 << 8;
 
 	// Overlay
 	public static final long OC_STATE = 0x00;

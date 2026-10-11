@@ -8,7 +8,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * A world opened to friends takes up to 100 players, not Minecraft's fixed 8 for LAN worlds (it's the
- * host's own PC doing the serving, over e4mc).
+ * host's own PC doing the serving).
  */
 @Mixin(IntegratedServer.class)
 public abstract class IntegratedServerMixin {

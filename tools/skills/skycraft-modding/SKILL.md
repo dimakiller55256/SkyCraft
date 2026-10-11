@@ -40,6 +40,10 @@ submodule, not a different revision inferred from the directory's name.
 Disable automatic CMake deployment during baseline builds with
 `-DSKYCRAFT_DEPLOY_DIR=`. Keep build artifacts and local paths out of commits.
 The package script can build and clear `dist`; inspect it before running.
+Keep source/build dependency caches outside the Skyrim game directory.
+Skyrim may recursively scan `Mods` even without MO2 and fail on a path that
+does not fit its 260-byte buffer. Use the external Gradle cache configured by
+`tools/dev.ps1`, never a junction back into the game directory.
 
 Run the affected build and existing focused tests. Java geometry tests do
 not establish SKSE runtime correctness. For integration changes, report game

@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class ScreenMixin {
 	@Inject(method = "isPauseScreen", at = @At("HEAD"), cancellable = true)
 	private void skycraft$neverPauseWhileLinked(CallbackInfoReturnable<Boolean> cir) {
-		if (SkyClient.linked()) {
+		if (SkyClient.tookOver()) {
 			cir.setReturnValue(false);
 		}
 	}

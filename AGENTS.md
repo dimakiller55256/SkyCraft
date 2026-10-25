@@ -28,6 +28,17 @@ the optional `python` path in ignored `.tools/dev-local.json` when needed.
 `create-retest-table.py` adds the automatic network.4 plan to the workbook;
 run it after the legacy `create-network-test-kit.py` generator.
 
+`NativeTests` builds and runs `tools/native-policy-tests` (game-independent C++ policy
+headers). `GameplaySmoke` runs two isolated real Minecraft clients (LAN, guest join, dig
+sync, combat, ownership, items). `SquaresSmoke` runs two clients linked to Python Skyrim
+stand-ins in different Skyrim worlds (`tools/world-squares-smoke.py`). None of them run
+Skyrim; say so when reporting.
+
+Every Skyrim world has its own square of the Minecraft map (`SkyWorlds`, `SkyOrigin`). The
+shared-memory protocol stays in the Skyrim world's own coordinates; only the Minecraft side
+adds or removes the square's origin. Positions in network packets are map positions.
+Co-op plan and status: `docs/YS-COOP-PLAN.md`.
+
 Keep `protocol/skycraft_protocol.h` and the Java `Proto.java` mirror in sync.
 Use the pinned CommonLib submodule. Do not equate a successful Java build
 with verification of C++ hooks or gameplay. Report unrun checks explicitly.

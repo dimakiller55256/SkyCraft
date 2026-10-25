@@ -81,3 +81,38 @@ acknowledgements, replay/deduplication, disconnect recovery, and persistence
 must prevent silent loss and repeated grants. Define crash recovery rather
 than assuming acknowledgement alone provides exactly-once delivery. Perform
 game inventory changes on the appropriate game/server thread.
+
+## Skyrim Together Reborn (STR) facts
+
+Verified by reading TiltedEvolution source (v1.8.4, commit cc4a108); not yet
+by running both mods together. Re-check after STR updates.
+
+- Client-authoritative: each synced actor has one owner client running AI and
+  physics; others replay a remote copy. The party leader supplies quest
+  progress, weather and time. Players are always owned by their own client.
+- `SkyrimTogether.exe` maps `SkyrimSE.exe` into its own process, installs its
+  MinHook detours, then loads SKSE, so SKSE plugins (SkyCraft.dll) still load.
+  The host process is not `SkyrimSE.exe` under STR.
+- Damage (`HookDamageActor` in `Code/client/Games/Skyrim/Actor.cpp`): a hit on
+  the local player is applied locally and broadcast as a health delta; a hit on
+  a remote player is ignored locally; a hit dealt by the local player is applied
+  locally and broadcast; NPC-vs-NPC applies only on the owner. SkyCraft hits
+  must therefore reach Skyrim with the local player as aggressor
+  (`ProcessHit`/`DoDamage`), never as raw actor-value writes.
+- Remote players are spawned with `TESNPC::Create` + `Actor::Create` (FF form
+  IDs), set essential with unrecoverable bleedout, and put in PlayerFaction
+  (0xDB1) rank 1. That combination identifies them without STR internals.
+- STR's local player is essential too; its death is bleedout plus STR respawn.
+  Do not clear the essential flag or call `KillImpl` on the player in STR mode.
+- Transport: GameNetworkingSockets over UDP, server port 10578; every client
+  must run the same STR build and the same mod list.
+
+## Testing constraints on the development PC
+
+16 GB RAM laptop: one Skyrim plus two Minecraft clients fits, two Skyrim
+instances do not. The shared-memory name `Local\SkyCraft_v1` is fixed, so two
+SkyCraft Skyrims on one PC also collide. Real co-op gameplay checks need the
+friend's PC; say so instead of implying a local run proved them.
+
+Co-op tooling and playbooks: see the `coop-anything` skill
+(`D:\SkyCraftDev\coop-anything`).

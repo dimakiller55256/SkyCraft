@@ -58,3 +58,7 @@ IP-адресами. Внутри это программа SkyCraft Link. Он�
   клиента Minecraft через туннель.
 - `SkyCraftLink probe` показывает, какая `steam_api64.dll` будет взята. Steam при этом не
   запускается, вход в аккаунт не нужен.
+- С настоящим Steam на одном аккаунте (только с согласия владельца аккаунта: на время
+  проверки он «в игре Spacewar»): `python tools/link-steam-check.py <SkyCraftLink.exe> <папка
+  отчёта>` проверяет сторону хоста; `dev.ps1 -Action SteamHostSmoke` открывает лобби из меню
+  Steam в настоящем Minecraft. Для стороны гостя нужен второй аккаунт Steam.

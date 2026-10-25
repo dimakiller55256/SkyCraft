@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'BuildLink', 'NativeTests', 'NetworkSmoke', 'AssistantWorldSmoke', 'GameplaySmoke', 'TunnelSmoke', 'SquaresSmoke')]
+    [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'BuildLink', 'NativeTests', 'NetworkSmoke', 'AssistantWorldSmoke', 'GameplaySmoke', 'TunnelSmoke', 'SteamHostSmoke', 'SquaresSmoke')]
     [string]$Action = 'Check',
     [string]$JavaHome,
     [string]$CMakePath,
@@ -70,7 +70,7 @@ if ($Action -eq 'Check') {
 }
 
 $linkExe = Join-Path $repoRoot '.tools\link-build\Release\SkyCraftLink.exe'
-if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke', 'GameplaySmoke', 'TunnelSmoke', 'SquaresSmoke')) {
+if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke', 'GameplaySmoke', 'TunnelSmoke', 'SteamHostSmoke', 'SquaresSmoke')) {
     if (-not $jdkReady) { throw 'Set -JavaHome to a JDK 25 folder, or configure .tools/dev-local.json.' }
     if ($cacheInsideGame) { throw 'Gradle cache must be outside the Skyrim game directory. Set -GradleUserHome or .tools/dev-local.json.' }
     $savedEnvironment = @{}
@@ -104,10 +104,11 @@ if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke', 'Gamepla
                     if (-not (Test-Path -LiteralPath $fixtureResult) -or (Get-Content -LiteralPath $fixtureResult -Raw | ConvertFrom-Json).result -ne 'PASS') { throw 'Unsafe position publication; inspect position-fixture-result.json.' }
                 } finally { if (-not $fixture.HasExited) { $fixture.Kill() }; $fixture.Dispose() }
                 if (-not (Test-Path -LiteralPath $worldResult) -or (Get-Content -LiteralPath $worldResult -Raw).Trim() -ne 'PASS') { throw 'Assistant world smoke failed; inspect .tools/assistant-world-smoke/logs/latest.log.' }
-            } elseif ($Action -in @('GameplaySmoke', 'TunnelSmoke')) {
+            } elseif ($Action -in @('GameplaySmoke', 'TunnelSmoke', 'SteamHostSmoke')) {
                 # Two isolated real Minecraft clients (host opens LAN, guest joins) in .tools/gameplay-*;
                 # never the Prism instances or Skyrim. Report in .tools/gameplay-audit/<time>.
                 # TunnelSmoke: both start SkyCraft Link from the Steam menu, the guest joins through it (BuildLink first).
+                # SteamHostSmoke: the host alone opens a real Steam lobby; it uses the owner's Steam account, ask first.
                 if ($Action -eq 'TunnelSmoke' -and -not (Test-Path -LiteralPath $linkExe)) { throw 'Run -Action BuildLink first.' }
                 & .\gradlew.bat -PnetworkSmoke -PgameplaySmoke exportGameplayLaunch --no-daemon --no-configuration-cache --console=plain
                 if ($LASTEXITCODE -ne 0) { throw "Gameplay client export failed (exit $LASTEXITCODE)." }
@@ -115,6 +116,7 @@ if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke', 'Gamepla
                 $audit = Join-Path $repoRoot ('.tools\gameplay-audit\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
                 $runnerArgs = @('-u', (Join-Path $repoRoot 'tools\run-gameplay-clients.py'), $audit)
                 if ($Action -eq 'TunnelSmoke') { $runnerArgs += @('--steamlink', $linkExe) }
+                if ($Action -eq 'SteamHostSmoke') { $runnerArgs += '--steam-host' }
                 & $python @runnerArgs
                 if ($LASTEXITCODE -ne 0) { throw "Gameplay smoke failed; see $audit." }
             } elseif ($Action -eq 'SquaresSmoke') {

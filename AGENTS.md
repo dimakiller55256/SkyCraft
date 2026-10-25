@@ -33,7 +33,8 @@ run it after the legacy `create-network-test-kit.py` generator.
 then puts the program into the JAR. `TunnelSmoke` is `GameplaySmoke` with both clients
 starting SkyCraft Link from the Steam menu, over its `--loopback` link instead of Steam.
 Ask the owner before anything that starts Steam or uses their account (`host`, `join`,
-`friends`); `SkyCraftLink probe` only inspects DLLs. Player guide: `docs/YS-STEAM.md`.
+`friends`, `tools/link-steam-check.py`, `SteamHostSmoke`: a host-only real-Steam check from the
+Steam menu); `SkyCraftLink probe` only inspects DLLs. Player guide: `docs/YS-STEAM.md`.
 `NativeTests` builds and runs `tools/native-policy-tests` (game-independent C++ policy
 headers). `GameplaySmoke` runs two isolated real Minecraft clients (LAN, guest join, dig
 sync, combat, ownership, items). `SquaresSmoke` runs two clients linked to Python Skyrim

@@ -1,6 +1,8 @@
 """Run exported Loom clients after Gradle exits, with bounded time and local reports.
 With --steamlink <SkyCraftLink.exe> both clients start SkyCraft Link from the mod's Steam menu and
-the guest joins through it, over the program's loopback link instead of Steam."""
+the guest joins through it, over the program's loopback link instead of Steam.
+With --steam-host only the host runs: real Steam on the owner's account (ask first), the program
+unpacked from the mod, a friends-only lobby opened from the Steam menu, nothing left running after."""
 import json, os, socket, subprocess, time, shutil, sys
 from pathlib import Path
 
@@ -10,6 +12,7 @@ def free_port():
 def main():
     audit=Path(sys.argv[1]); audit.mkdir(parents=True,exist_ok=True)
     link=sys.argv[sys.argv.index('--steamlink')+1] if '--steamlink' in sys.argv else None
+    steam_host='--steam-host' in sys.argv
     env={}; seen=set()
     for key,value in os.environ.items():
         if key.upper() not in seen:env[key]=value;seen.add(key.upper())
@@ -18,8 +21,9 @@ def main():
     jobs=[]; logs=[]
     # The clients' links meet on this port (SkyCraft Link's --loopback) instead of in a Steam lobby.
     link_args=['-Dskycraft.gameplayJoin=steamlink',f'-Dskycraft.linkExe={link}',f'-Dskycraft.linkExtraArgs=--loopback {free_port()} --no-together'] if link else []
+    if steam_host:link_args=['-Dskycraft.gameplayJoin=steamhost']
     started=time.time()
-    for role,task in [('Host','runGameplayHostClient'),('Guest','runGameplayGuestClient')]:
+    for role,task in [('Host','runGameplayHostClient')]+([] if steam_host else [('Guest','runGameplayGuestClient')]):
         data=json.loads((ROOT/'.tools'/f'{task}.json').read_text(encoding='utf-8'))
         game=Path(data['workingDirectory'])
         # These are owned isolated test directories, never Prism instances.
@@ -55,6 +59,16 @@ def main():
                 if file.is_file() and file.stat().st_mtime >= started-1:
                     shutil.copyfile(file,audit/f'{role}-{file.name}')
     for log in logs:log.close()
+    if steam_host:
+        # The program must end with the game: a stray one would keep the lobby open.
+        left=None
+        for _ in range(20):
+            out=subprocess.run(['powershell','-NoProfile','-Command',"(Get-Process -Name 'SkyCraftLink-*' -ErrorAction SilentlyContinue | Measure-Object).Count"],capture_output=True,text=True)
+            left=out.stdout.strip()
+            if left=='0':break
+            time.sleep(0.5)
+        print(f'SkyCraft Link processes left after the game closed: {left}',flush=True)
+        failed |= left!='0'
     if link:
         # The links' own events, as each client logged them: the guest really came through one.
         host_log=(audit/'Host-game.log').read_text(encoding='utf-8',errors='replace')
@@ -64,6 +78,7 @@ def main():
         print(f'SkyCraft Link: host saw the guest join: {joined}; guest link opened its Minecraft port: {handed}',flush=True)
         failed |= not joined or not handed
     if failed:raise SystemExit(1)
-    if link:print('PASS: real Minecraft PLAY and two players through SkyCraft Link from the Steam menu (its loopback link, not Steam).',flush=True)
+    if steam_host:print('PASS: real Minecraft host opened a friends-only Steam lobby from the Steam menu (real Steam; no guest).',flush=True)
+    elif link:print('PASS: real Minecraft PLAY and two players through SkyCraft Link from the Steam menu (its loopback link, not Steam).',flush=True)
     else:print('PASS: real Minecraft PLAY and two players. Connectivity between PCs remains untested.',flush=True)
 if __name__=='__main__':main()

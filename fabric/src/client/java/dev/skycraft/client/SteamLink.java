@@ -38,6 +38,8 @@ public final class SteamLink {
 	/** Skyrim Together's usual server port: the host's server listens there, a guest's game connects there. */
 	public static final int TOGETHER_PORT = 10578;
 	private static final String RESOURCE = "/skycraft/SkyCraftLink.exe";
+	// Steam IDs (Valve's DLL prints ours too) stay out of the log, which may end up in a report.
+	private static final java.util.regex.Pattern STEAM_ID = java.util.regex.Pattern.compile("7656119\\d{10}");
 
 	private static Process process;
 	private static long generation;
@@ -144,14 +146,14 @@ public final class SteamLink {
 		running = true;
 		long attempt = ++generation;
 		changed();
-		SkyCraft.LOG.info("SkyCraft Link: started {}", command);
+		SkyCraft.LOG.info("SkyCraft Link: started {}", masked(String.join(" ", command)));
 		Thread.ofVirtual().name("SkyCraft Link").start(() -> read(minecraft, started, attempt));
 	}
 
 	private static void read(Minecraft minecraft, Process from, long attempt) {
 		try (var reader = new BufferedReader(new InputStreamReader(from.getInputStream(), StandardCharsets.UTF_8))) {
 			for (String line; (line = reader.readLine()) != null;) {
-				SkyCraft.LOG.info("SkyCraft Link: {}", line);
+				SkyCraft.LOG.info("SkyCraft Link: {}", masked(line));
 				JsonObject event;
 				try {
 					event = JsonParser.parseString(line).getAsJsonObject();
@@ -294,6 +296,8 @@ public final class SteamLink {
 	private static String text(JsonObject event, String key) {
 		return event.get(key) instanceof JsonElement value && value.isJsonPrimitive() ? value.getAsString() : "";
 	}
+
+	private static String masked(String text) { return STEAM_ID.matcher(text).replaceAll("7656119…"); }
 
 	private static void changed() { version++; }
 }

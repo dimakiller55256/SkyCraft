@@ -73,10 +73,16 @@ final class GameplaySmoke {
                         mc.gui.setScreen(null);
                         inputCheck(mc);
                         menuChecked=true;
-                        if(steamLink()){mc.gui.setScreen(new dev.skycraft.client.SteamMenu(null));press(mc,"Открыть свой мир друзьям в Steam");}
+                        if(steamLink()||steamHost()){mc.gui.setScreen(new dev.skycraft.client.SteamMenu(null));press(mc,"Открыть свой мир друзьям в Steam");}
                     }
                     // Through SkyCraft Link the guest waits until our link says the world is open to friends.
-                    if(steamLink()&&!(dev.skycraft.client.SteamLink.running()&&dev.skycraft.client.SteamLink.status().startsWith("Мир открыт")))return;
+                    if((steamLink()||steamHost())&&!(dev.skycraft.client.SteamLink.running()&&dev.skycraft.client.SteamLink.status().startsWith("Мир открыт")))return;
+                    if(steamHost()){
+                        try(var unpacked=Files.list(mc.gameDirectory.toPath().resolve("skycraft/link"))){
+                            if(unpacked.noneMatch(p->p.getFileName().toString().matches("SkyCraftLink-[0-9a-f]{16}\\.exe")))throw new IllegalStateException("SkyCraft Link not unpacked from the mod");
+                        }
+                        finish(mc,"PASS: Steam menu opened a friends-only Spacewar lobby through the SkyCraft Link unpacked from the mod");return;
+                    }
                     if(steamLink())mc.gui.setScreen(null);
                     Files.writeString(mc.gameDirectory.toPath().resolve("port.txt"),Integer.toString(port));step=4;
                 }
@@ -156,6 +162,8 @@ final class GameplaySmoke {
     }
     /** Both clients run SkyCraft Link from the Steam menu (over its loopback link) instead of joining the LAN port. */
     private static boolean steamLink(){return "steamlink".equals(System.getProperty("skycraft.gameplayJoin"));}
+    /** Real Steam on the owner's one account: only the host's side, with the program unpacked from the mod. */
+    private static boolean steamHost(){return "steamhost".equals(System.getProperty("skycraft.gameplayJoin"));}
     private void guest(Minecraft mc)throws Exception {
         if(step==0){
             if(!(mc.gui.screen() instanceof TitleScreen title)||!Files.exists(peer.resolve("port.txt")))return;

@@ -267,6 +267,11 @@ public final class SkyLink {
 		public boolean takingOver() {
 			return (this.flags & SKY_TAKEOVER) != 0;
 		}
+
+		/** Skyrim runs inside Skyrim Together Reborn, whose death system respawns the Skyrim player. */
+		public boolean strSession() {
+			return (this.flags & SKY_STR_SESSION) != 0;
+		}
 	}
 
 	/** Seqlock read of SkyState into {@code out}. Returns false if the link is down. */

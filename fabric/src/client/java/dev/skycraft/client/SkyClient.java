@@ -207,10 +207,32 @@ public final class SkyClient {
 		MirrorWorld.tick(minecraft);
 		DiscordPresence.tick(minecraft);
 		SkyDigClient.tick(minecraft);
+		respawnWithSkyrimTogether(minecraft);
 		freezeWhileUnlinked(minecraft);
 		freezeDuringTakeover(minecraft);
 		holdUntilReady(minecraft);
 		publishTick(minecraft);
+	}
+
+	// With Skyrim Together the Skyrim player isn't killed: its death system gets them up again a few
+	// seconds into bleedout. The Minecraft player comes back too, and is held wherever it respawns
+	// until Skyrim hands the player back and puts it where they really are.
+	private static final long STR_RESPAWN_AFTER_MS = 1500;
+	private static long diedAt;
+	private static void respawnWithSkyrimTogether(Minecraft minecraft) {
+		LocalPlayer player = minecraft.player;
+		if (!linked || !sky.strSession() || player == null || !player.isDeadOrDying()) {
+			diedAt = 0;
+			return;
+		}
+		long now = System.currentTimeMillis();
+		if (diedAt == 0) {
+			diedAt = now;
+		} else if (now - diedAt >= STR_RESPAWN_AFTER_MS) {
+			diedAt = now + 5000; // asked; ask again only if the server never answers
+			SkyCraft.LOG.info("SkyCraft: respawning the Minecraft player for Skyrim Together's respawn");
+			player.respawn();
+		}
 	}
 	private static void freezeDuringTakeover(Minecraft minecraft) {
 		LocalPlayer player=minecraft.player;

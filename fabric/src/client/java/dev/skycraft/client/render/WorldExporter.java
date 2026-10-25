@@ -63,6 +63,8 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 public final class WorldExporter {
 	private static final int SECTIONS_PER_FRAME = 12;
 	private static final double ENTITY_RANGE = 96.0;
+	// Skyrim's high-process actors (where STR's stand-ins live) reach about this far.
+	private static final double REMOTE_PLAYER_RANGE = 160.0;
 
 	private static final LongLinkedOpenHashSet DIRTY = new LongLinkedOpenHashSet();
 	private static final LongOpenHashSet SENT = new LongOpenHashSet(); // sections Skyrim holds a mesh for
@@ -325,6 +327,17 @@ public final class WorldExporter {
 	private static void exportEntities(Minecraft minecraft, ClientLevel level, float partialTick) {
 		ENTITIES.clear();
 		Vec3 eye = minecraft.player.getEyePosition(partialTick);
+		// The other players first, so a crowd of items never pushes them out: Skyrim hides Skyrim
+		// Together's stand-in for whoever has a Minecraft body here.
+		for (var other : level.players()) {
+			if (other == minecraft.player || other.isSpectator() || other.isRemoved() || ENTITIES.size() >= Proto.MAX_WORLD_ENTITIES / 4
+				|| other.distanceToSqr(eye) > REMOTE_PLAYER_RANGE * REMOTE_PLAYER_RANGE) {
+				continue;
+			}
+			Vec3 p = other.getPosition(partialTick);
+			ENTITIES.add(new SkyLink.WorldEntity(Proto.WE_REMOTE_PLAYER, other.getId(), (float) p.x, (float) p.y, (float) p.z,
+				other.getYRot(partialTick), 0.0F, other.getBbWidth(), null, null, 0));
+		}
 		for (Entity e : level.entitiesForRendering()) {
 			if (ENTITIES.size() >= Proto.MAX_WORLD_ENTITIES || e.distanceToSqr(eye) > ENTITY_RANGE * ENTITY_RANGE) {
 				continue;

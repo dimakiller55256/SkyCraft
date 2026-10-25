@@ -121,6 +121,17 @@ namespace skycraft
 		bool PlayerEngaged();
 	}
 
+	namespace Coop
+	{
+		// The game runs inside Skyrim Together Reborn's launcher (SkyrimTogether.exe).
+		bool StrLoaded();
+		// One of STR's stand-ins for another player (never the local player, never an NPC).
+		bool IsStrRemotePlayer(RE::Actor* a_actor);
+		// Main thread, every frame: STR players whose friend's Minecraft body stands at their spot are
+		// hidden (that body is drawn instead); a friend without SkyCraft stays visible.
+		void PerFrame(RE::PlayerCharacter* a_player, bool a_minecraftInWorld);
+	}
+
 	namespace BlockLights
 	{
 		// Render messages (main thread): a section's light-emitting blocks; a world change.

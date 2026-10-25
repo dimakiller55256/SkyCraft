@@ -1,4 +1,5 @@
 #include "CombatPolicy.h"
+#include "CoopPolicy.h"
 #include "ItemCheckpoint.h"
 #include "ItemForm.h"
 #include "KeyReconcile.h"
@@ -83,8 +84,23 @@ int main() {
         if(k.Poll(W,true,true)!=A::kNone||k.Poll(W,false,false)!=A::kNone||k.Poll(W,true,true)!=A::kNone)return 24;
         if(k.Poll(99,true,true)!=A::kNone||k.Down(99))return 25;
     }
+    {
+        using namespace skycraft::CoopPolicy;
+        // STR's remote player: runtime reference of a runtime NPC, essential, in PlayerFaction.
+        const ActorFacts remote{false,0xFF000812u,0xFF000811u,true,true};
+        if(!LooksLikeStrRemotePlayer(remote))return 26;
+        ActorFacts f=remote;f.isPlayer=true;if(LooksLikeStrRemotePlayer(f))return 27;          // the local player
+        f=remote;f.refId=0x0001A694u;if(LooksLikeStrRemotePlayer(f))return 28;                // a placed NPC
+        f=remote;f.baseId=0x00013BBDu;if(LooksLikeStrRemotePlayer(f))return 29;               // a summoned or random-event NPC of a real base
+        f=remote;f.inPlayerFaction=false;if(LooksLikeStrRemotePlayer(f))return 30;            // a runtime follower
+        f=remote;f.essential=false;if(LooksLikeStrRemotePlayer(f))return 31;
+        // Hidden only near a Minecraft body; once hidden, kept hidden until clearly elsewhere.
+        if(!HideRemotePlayer(false,3.0)||HideRemotePlayer(false,5.0)||!HideRemotePlayer(true,7.0)||HideRemotePlayer(true,9.0))return 32;
+        if(HideRemotePlayer(false,std::numeric_limits<double>::infinity())||HideRemotePlayer(true,std::numeric_limits<double>::quiet_NaN()))return 33;
+    }
     std::cout<<"PASS: plugin/local item resolution accepts MISC/WEAP/ARMO/BOOK base objects; exact-type regression reproduced; unknown/wrong/non-bound sources rejected\n";
     std::cout<<"PASS: item recovery accepts acknowledged removal and refuses save/journal rollback, interrupted removal and duplicate IDs\n";
     std::cout<<"PASS: native hit monotonic freshness, expired/invalid events and shield front/back\n";
     std::cout<<"PASS: lost key presses/releases replayed after two polls, late events ignored, no press replay under a Minecraft screen\n";
+    std::cout<<"PASS: STR remote players told apart from the player, NPCs and followers; hidden only near a Minecraft body, with hysteresis\n";
 }

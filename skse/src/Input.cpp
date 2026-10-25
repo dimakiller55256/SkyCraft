@@ -1,5 +1,6 @@
 #include "Game.h"
 #include "Collision.h"
+#include "KeyReconcile.h"
 
 namespace skycraft
 {
@@ -49,9 +50,27 @@ namespace skycraft
 			return a_code == kDikEscape || a_code == kDikConsole || a_code == kDikJ || a_code == kDikM || a_code == kDikF9;
 		}
 
+		// Keys whose press is never Minecraft's in gameplay (Skyrim's own keys and the system's), so a
+		// lost press of them is never replayed to Minecraft.
+		bool NeverReplayPress(std::uint32_t a_code)
+		{
+			return IsSkyrimMenuKey(a_code) || a_code == kDikG || a_code == kDikH || a_code == kDikO || a_code == 0xB7 || a_code == 0xC5 ||
+			       a_code == 0xDB || a_code == 0xDC || a_code == 0xDD;
+		}
+
+		// Skyrim's mouse buttons 0-4 as SDL buttons, and the virtual keys of those physical buttons
+		// (GetAsyncKeyState reads mouse buttons physically, as DirectInput does).
+		constexpr std::uint16_t kSdlButtons[5] = { 1, 3, 2, 4, 5 };
+		constexpr int           kButtonKeys[5] = { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2 };
+
 		float lookDx = 0.0f;
 		float lookDy = 0.0f;
-		std::array<bool, 256> heldKeys{};
+		// What Minecraft was told is held, against the physical keyboard and mouse (KeyReconcile.h).
+		KeyReconcile<256> keys;
+		KeyReconcile<5>   buttons;
+		bool              routing = false;
+		int               replayedPresses = 0, replayedReleases = 0;
+		std::chrono::steady_clock::time_point replayReport{};
 
 		// G on something Skyrim can activate (door, NPC, container, item, furniture) activates it in
 		// Skyrim. Furniture (chairs, beds, crafting stations, pull-bar levers) hands the player to
@@ -164,7 +183,7 @@ namespace skycraft
 									}
 								}
 								if (const auto sdl = kDikToSdl[code & 0xFF]) {
-									heldKeys[code & 0xFF] = down;
+									keys.Sent(code & 0xFF, down);
 									link.PushInput(proto::kInKey, sdl, down ? 1 : 0);
 								}
 							} else if (button->GetDevice() == RE::INPUT_DEVICE::kMouse) {
@@ -174,10 +193,9 @@ namespace skycraft
 									}
 									break;
 								}
-								static constexpr std::uint16_t kButtons[8] = { 1, 3, 2, 4, 5, 0, 0, 0 };
-								const std::uint16_t sdlButton = code < 8 ? kButtons[code] : std::uint16_t(0);
-								if (sdlButton) {
-									link.PushInput(proto::kInMouseButton, sdlButton, down ? 1 : 0);
+								if (code < std::size(kSdlButtons)) {
+									buttons.Sent(code, down);
+									link.PushInput(proto::kInMouseButton, kSdlButtons[code], down ? 1 : 0);
 								}
 							}
 							break;
@@ -279,22 +297,73 @@ namespace skycraft
 		void ReleaseAll()
 		{
 			lookDx = lookDy = 0.0f;
-			heldKeys.fill(false);
+			keys.Clear();
+			buttons.Clear();
 			Link::Get().PushInput(proto::kInReleaseAll, 0);
 		}
 
-		void ReconcileKeys()
+		void Reconcile(bool a_routing, bool a_pressAllowed)
 		{
-			if (!HasFocus()) return;
-			for (unsigned dik=0; dik<heldKeys.size(); ++dik) {
-				if (!heldKeys[dik]) continue;
-				const auto scan = (dik & 0x80) ? 0xE000u | (dik & 0x7F) : dik;
-				const auto vk = ::MapVirtualKeyExW(scan, MAPVK_VSC_TO_VK_EX, ::GetKeyboardLayout(0));
-				if (vk && !(::GetAsyncKeyState(static_cast<int>(vk)) & 0x8000)) {
-					heldKeys[dik]=false;
-					Link::Get().PushInput(proto::kInKey,kDikToSdl[dik],0);
-					logger::info("input: recovered missed key release (scan {})",dik);
+			if (!a_routing || !HasFocus()) {
+				// Minecraft drops its keys whenever it stops taking input; start from nothing held,
+				// so keys still down when input comes back are pressed again (after furniture, say).
+				if (routing) {
+					ReleaseAll();
 				}
+				routing = false;
+				return;
+			}
+			routing = true;
+			auto&      link = Link::Get();
+			const auto layout = ::GetKeyboardLayout(0);
+			for (unsigned dik = 0; dik < 256; ++dik) {
+				if (!kDikToSdl[dik]) {
+					continue;
+				}
+				const bool pressAllowed = a_pressAllowed && !NeverReplayPress(dik);
+				if (!keys.Down(dik) && !pressAllowed) {
+					keys.Poll(dik, false, false);  // nothing to replay: just forget a half-counted press
+					continue;
+				}
+				const auto scan = (dik & 0x80) ? 0xE000u | (dik & 0x7F) : dik;
+				const auto vk = ::MapVirtualKeyExW(scan, MAPVK_VSC_TO_VK_EX, layout);
+				if (!vk) {
+					continue;
+				}
+				const bool physical = (::GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) != 0;
+				switch (keys.Poll(dik, physical, pressAllowed)) {
+				case KeyReconcile<256>::Action::kPress:
+					link.PushInput(proto::kInKey, kDikToSdl[dik], 1);
+					++replayedPresses;
+					break;
+				case KeyReconcile<256>::Action::kRelease:
+					link.PushInput(proto::kInKey, kDikToSdl[dik], 0);
+					++replayedReleases;
+					break;
+				default:
+					break;
+				}
+			}
+			for (unsigned b = 0; b < std::size(kButtonKeys); ++b) {
+				const bool physical = (::GetAsyncKeyState(kButtonKeys[b]) & 0x8000) != 0;
+				switch (buttons.Poll(b, physical, a_pressAllowed)) {
+				case KeyReconcile<5>::Action::kPress:
+					link.PushInput(proto::kInMouseButton, kSdlButtons[b], 1);
+					++replayedPresses;
+					break;
+				case KeyReconcile<5>::Action::kRelease:
+					link.PushInput(proto::kInMouseButton, kSdlButtons[b], 0);
+					++replayedReleases;
+					break;
+				default:
+					break;
+				}
+			}
+			const auto now = std::chrono::steady_clock::now();
+			if ((replayedPresses || replayedReleases) && now - replayReport > std::chrono::seconds(30)) {
+				logger::info("input: replayed {} press(es) and {} release(s) Skyrim's input queue lost", replayedPresses, replayedReleases);
+				replayedPresses = replayedReleases = 0;
+				replayReport = now;
 			}
 		}
 

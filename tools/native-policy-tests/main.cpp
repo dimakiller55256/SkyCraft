@@ -1,6 +1,7 @@
 #include "CombatPolicy.h"
 #include "ItemCheckpoint.h"
 #include "ItemForm.h"
+#include "KeyReconcile.h"
 #include <iostream>
 #include <limits>
 #include <type_traits>
@@ -54,7 +55,36 @@ int main() {
     }
     Form quest{FormType::Quest};Handler handler{&quest};
     if(skycraft::ItemForm::Resolve<Bound>(&handler,0x5ACE4,"Skyrim.esm")||skycraft::ItemForm::Resolve<Bound>(static_cast<Handler*>(nullptr),0x5ACE4,"Skyrim.esm"))return 15;
+    {
+        using Keys=skycraft::KeyReconcile<8>;
+        using A=Keys::Action;
+        constexpr std::size_t W=3;
+        Keys k;
+        // Skyrim's event and the physical key agree: nothing to replay.
+        k.Sent(W,true);
+        if(k.Poll(W,true,true)!=A::kNone||!k.Down(W))return 16;
+        // A release Skyrim's queue dropped is replayed on the second poll, not the first.
+        if(k.Poll(W,false,true)!=A::kNone||k.Poll(W,false,true)!=A::kRelease||k.Down(W))return 17;
+        // A dropped press likewise, when presses may be replayed.
+        if(k.Poll(W,true,true)!=A::kNone||k.Poll(W,true,true)!=A::kPress||!k.Down(W))return 18;
+        // A late event (one-poll difference) never produces a replay.
+        k.Sent(W,true);
+        if(k.Poll(W,false,true)!=A::kNone||k.Poll(W,true,true)!=A::kNone||k.Poll(W,false,true)!=A::kNone)return 19;
+        k.Sent(W,false);
+        if(k.Poll(W,true,true)!=A::kNone)return 20;
+        k.Sent(W,true);
+        if(k.Poll(W,true,true)!=A::kNone)return 21;
+        // With a Minecraft screen up presses are never replayed, releases still are.
+        k.Clear();
+        if(k.Poll(W,true,false)!=A::kNone||k.Poll(W,true,false)!=A::kNone||k.Down(W))return 22;
+        k.Sent(W,true);
+        if(k.Poll(W,false,false)!=A::kNone||k.Poll(W,false,false)!=A::kRelease)return 23;
+        // A half-counted press is forgotten when presses stop being allowed.
+        if(k.Poll(W,true,true)!=A::kNone||k.Poll(W,false,false)!=A::kNone||k.Poll(W,true,true)!=A::kNone)return 24;
+        if(k.Poll(99,true,true)!=A::kNone||k.Down(99))return 25;
+    }
     std::cout<<"PASS: plugin/local item resolution accepts MISC/WEAP/ARMO/BOOK base objects; exact-type regression reproduced; unknown/wrong/non-bound sources rejected\n";
     std::cout<<"PASS: item recovery accepts acknowledged removal and refuses save/journal rollback, interrupted removal and duplicate IDs\n";
     std::cout<<"PASS: native hit monotonic freshness, expired/invalid events and shield front/back\n";
+    std::cout<<"PASS: lost key presses/releases replayed after two polls, late events ignored, no press replay under a Minecraft screen\n";
 }

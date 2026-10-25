@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'NetworkSmoke', 'AssistantWorldSmoke')]
+    [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'NativeTests', 'NetworkSmoke', 'AssistantWorldSmoke')]
     [string]$Action = 'Check',
     [string]$JavaHome,
     [string]$CMakePath,
@@ -136,6 +136,17 @@ if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke')) {
 
 if (-not $vsRoot) { throw 'Install Visual Studio 2026 Build Tools with C++ x64/x86 and a Windows SDK.' }
 if (-not $cmakeReady) { throw 'CMake is missing. Install the C++ CMake tools component or pass -CMakePath.' }
+if ($Action -eq 'NativeTests') {
+    # Standalone checks of the plugin's game-independent policy headers (no Skyrim, no CommonLib).
+    $testBuild = Join-Path $repoRoot '.tools\native-policy'
+    & $CMakePath -S (Join-Path $repoRoot 'tools\native-policy-tests') -B $testBuild -G 'Visual Studio 18 2026' -A x64
+    if ($LASTEXITCODE -ne 0) { throw "Native test configuration failed (exit $LASTEXITCODE)." }
+    & $CMakePath --build $testBuild --config Release
+    if ($LASTEXITCODE -ne 0) { throw "Native test build failed (exit $LASTEXITCODE)." }
+    & (Join-Path $testBuild 'Release\CombatPolicyTest.exe')
+    if ($LASTEXITCODE -ne 0) { throw "Native policy test failed with code $LASTEXITCODE (see tools/native-policy-tests/main.cpp)." }
+    return
+}
 if (-not $commonLibReady) { throw 'Run git submodule update --init --recursive.' }
 if (-not $vcpkgReady) { throw 'Clone microsoft/vcpkg into .tools/vcpkg and run bootstrap-vcpkg.bat -disableMetrics.' }
 & (Join-Path $PSScriptRoot 'check-native-api.ps1')

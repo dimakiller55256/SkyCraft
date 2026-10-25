@@ -100,7 +100,9 @@ namespace skycraft
 		void ConsumeLook(float& a_dx, float& a_dy);
 		// Tells MC to release everything (input focus moved to Skyrim).
 		void ReleaseAll();
-		void ReconcileKeys();
+		// Once a frame: replays key and button events Skyrim's input queue lost while input goes to
+		// Minecraft (a_routing); a lost press only when a_pressAllowed (no Minecraft screen open).
+		void Reconcile(bool a_routing, bool a_pressAllowed);
 		bool HasFocus();
 	}
 

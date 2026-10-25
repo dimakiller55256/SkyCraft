@@ -24,6 +24,7 @@ OFF_IN = 0x1000
 OFF_ACTORS = 0x12000
 OFF_EVENTS = 0x17000
 OFF_ENTITIES = 0x1C000
+OFF_WORLD_INFO = 0x1FFC0
 OFF_COL = 0x20000
 COL_BYTES = 32 << 20
 OFF_PIX = OFF_COL + COL_BYTES
@@ -36,6 +37,7 @@ COL_DATA = COL_BYTES - 0x80
 W, H = 1280, 720
 FLOOR_Y = 100  # blocks
 X0 = 100000    # test area origin (blocks); must be a multiple of 8
+WORLD = 0x3C   # the stand-in is always in Tamriel: Minecraft keeps that world at the map's middle
 
 
 def tick():
@@ -45,11 +47,12 @@ def tick():
 
 
 class Link:
-    def __init__(self):
+    def __init__(self, name=NAME, world=WORLD, plugin=b"Skyrim.esm", local_id=None):
         import ctypes
 
         ctypes.windll.kernel32.GetTickCount64.restype = ctypes.c_uint64
-        self.m = mmap.mmap(-1, SIZE, tagname=NAME)
+        self.world = world
+        self.m = mmap.mmap(-1, SIZE, tagname=name)
         self.m[0:0x100] = bytes(0x100)
         self.m[OFF_SKY:OFF_SKY + 0x40] = bytes(0x40)
         self.m[OFF_OVL:OFF_OVL + 0x100] = bytes(0x100)
@@ -59,6 +62,8 @@ class Link:
         self.m[OFF_EVENTS:OFF_EVENTS + 0x80] = bytes(0x80)
         self.m[OFF_ENTITIES:OFF_ENTITIES + 0x40] = bytes(0x40)
         self.m[OFF_RENDER:OFF_RENDER + 0x80] = bytes(0x80)
+        self.m[OFF_WORLD_INFO:OFF_WORLD_INFO + 64] = bytes(64)
+        self.set_world(world, plugin, world & 0xFFFFFF if local_id is None else local_id)
         struct.pack_into("<IIII", self.m, 0, MAGIC, VERSION, os.getpid(), 0)
         self.front = 2
         self.sky_seq = 0
@@ -67,6 +72,14 @@ class Link:
         self.events = []
         self.sections = 0
         self.atlas = None
+
+    def set_world(self, world, plugin, local_id):
+        """WorldInfo: the world's identity Minecraft places it in the map by (seqlock: odd while writing)."""
+        self.world = world
+        (seq,) = struct.unpack_from("<I", self.m, OFF_WORLD_INFO)
+        struct.pack_into("<I", self.m, OFF_WORLD_INFO, seq | 1)
+        struct.pack_into("<II52s", self.m, OFF_WORLD_INFO + 4, world, local_id, plugin)
+        struct.pack_into("<I", self.m, OFF_WORLD_INFO, (seq | 1) + 1)
 
     def heartbeat(self):
         struct.pack_into("<Q", self.m, 0x10, tick())
@@ -120,7 +133,7 @@ class Link:
     def write_actor(self, form, x, y, z):
         struct.pack_into("<I", self.m, OFF_ACTORS, self.actor_seq * 2 + 1)
         rec = struct.pack("<IIfffffffHH24s", form, 1, x, y, z, 90.0, 0.6, 1.8, 1.0, 10, 0, b"Test Bandit")
-        struct.pack_into("<I", self.m, OFF_ACTORS + 4, 1)
+        struct.pack_into("<II", self.m, OFF_ACTORS + 4, 1, self.world)
         self.m[OFF_ACTORS + 0x40:OFF_ACTORS + 0x40 + 64] = rec
         self.actor_seq += 1
         struct.pack_into("<I", self.m, OFF_ACTORS, self.actor_seq * 2)
@@ -132,7 +145,7 @@ class Link:
     def write_sky(self, flags, pos, yaw, pitch, teleport_seq, epoch):
         self.sky_seq += 1
         struct.pack_into("<I", self.m, OFF_SKY, self.sky_seq * 2 - 1)
-        struct.pack_into("<IIIdddffIIIf", self.m, OFF_SKY + 4, flags, 0x3C, epoch, pos[0], pos[1], pos[2],
+        struct.pack_into("<IIIdddffIIIf", self.m, OFF_SKY + 4, flags, self.world, epoch, pos[0], pos[1], pos[2],
                          yaw, pitch, teleport_seq, W, H, 12.0)
         struct.pack_into("<I", self.m, OFF_SKY, self.sky_seq * 2)
 

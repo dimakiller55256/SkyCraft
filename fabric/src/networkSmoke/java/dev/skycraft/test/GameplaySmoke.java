@@ -198,10 +198,14 @@ final class GameplaySmoke {
         var clear=store.getDeclaredMethod("clear",int.class);clear.setAccessible(true);
         var tris=store.getDeclaredMethod("readTris",java.lang.foreign.MemorySegment.class,long.class);tris.setAccessible(true);
         var voxels=store.getDeclaredMethod("readRegion",java.lang.foreign.MemorySegment.class,long.class);voxels.setAccessible(true);
+        // Geometry is kept at its world's square of the map: this check's world is Tamriel's, the middle.
+        var stored=store.getDeclaredField("stored");stored.setAccessible(true);
+        Object held=stored.get(null);
         var sky=dev.skycraft.client.SkyClient.sky();int flags=sky.flags;
         double distance=mc.player.fallDistance;
         try(var arena=java.lang.foreign.Arena.ofConfined()) {
             clear.invoke(null,991);sky.flags=dev.skycraft.link.Proto.SKY_IN_GAME;
+            stored.set(null,new dev.skycraft.world.SkyOrigin.Origin(0x3c,0,0));
             var move=new net.minecraft.world.phys.Vec3(.1,-.0784,0);
             if(!dev.skycraft.client.SkyCollider.collide(mc.player,move).equals(net.minecraft.world.phys.Vec3.ZERO))throw new IllegalStateException("Unknown geometry allowed player to fall");
             int rx=(int)Math.floor(mc.player.getX()/8),ry=(int)Math.floor(mc.player.getY()/8),rz=(int)Math.floor(mc.player.getZ()/8);
@@ -228,7 +232,7 @@ final class GameplaySmoke {
             sky.flags|=dev.skycraft.link.Proto.SKY_TAKEOVER;
             if(!dev.skycraft.client.SkyCollider.collide(mc.player,move).equals(net.minecraft.world.phys.Vec3.ZERO))throw new IllegalStateException("Minecraft moved during Skyrim takeover");
             Files.writeString(mc.gameDirectory.toPath().resolve("collision-check.txt"),"PASS: actual collider holds unknown geometry; known empty permits falling; late terrain lifts feet; Skyrim takeover freezes Minecraft");
-        }finally{sky.flags=flags;mc.player.fallDistance=distance;clear.invoke(null,-1);}
+        }finally{sky.flags=flags;mc.player.fallDistance=distance;clear.invoke(null,-1);stored.set(null,held);}
     }
     private static void press(Minecraft mc,String label){((Button)Screens.getWidgets(mc.gui.screen()).stream().filter(w->w instanceof Button&&w.getMessage().getString().equals(label)).findFirst().orElseThrow()).onPress(new KeyEvent(257,0,0));}
     private void finish(Minecraft mc,String result){

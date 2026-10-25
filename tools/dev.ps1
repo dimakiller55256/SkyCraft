@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'NativeTests', 'NetworkSmoke', 'AssistantWorldSmoke')]
+    [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'NativeTests', 'NetworkSmoke', 'AssistantWorldSmoke', 'GameplaySmoke', 'SquaresSmoke')]
     [string]$Action = 'Check',
     [string]$JavaHome,
     [string]$CMakePath,
@@ -69,7 +69,7 @@ if ($Action -eq 'Check') {
     return
 }
 
-if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke')) {
+if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke', 'GameplaySmoke', 'SquaresSmoke')) {
     if (-not $jdkReady) { throw 'Set -JavaHome to a JDK 25 folder, or configure .tools/dev-local.json.' }
     if ($cacheInsideGame) { throw 'Gradle cache must be outside the Skyrim game directory. Set -GradleUserHome or .tools/dev-local.json.' }
     $savedEnvironment = @{}
@@ -103,6 +103,23 @@ if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke')) {
                     if (-not (Test-Path -LiteralPath $fixtureResult) -or (Get-Content -LiteralPath $fixtureResult -Raw | ConvertFrom-Json).result -ne 'PASS') { throw 'Unsafe position publication; inspect position-fixture-result.json.' }
                 } finally { if (-not $fixture.HasExited) { $fixture.Kill() }; $fixture.Dispose() }
                 if (-not (Test-Path -LiteralPath $worldResult) -or (Get-Content -LiteralPath $worldResult -Raw).Trim() -ne 'PASS') { throw 'Assistant world smoke failed; inspect .tools/assistant-world-smoke/logs/latest.log.' }
+            } elseif ($Action -eq 'GameplaySmoke') {
+                # Two isolated real Minecraft clients (host opens LAN, guest joins) in .tools/gameplay-*;
+                # never the Prism instances or Skyrim. Report in .tools/gameplay-audit/<time>.
+                & .\gradlew.bat -PnetworkSmoke -PgameplaySmoke exportGameplayLaunch --no-daemon --no-configuration-cache --console=plain
+                if ($LASTEXITCODE -ne 0) { throw "Gameplay client export failed (exit $LASTEXITCODE)." }
+                $python = if ($localConfig.python) { $localConfig.python } else { (Get-Command python -ErrorAction Stop).Source }
+                $audit = Join-Path $repoRoot ('.tools\gameplay-audit\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+                & $python -u (Join-Path $repoRoot 'tools\run-gameplay-clients.py') $audit
+                if ($LASTEXITCODE -ne 0) { throw "Gameplay smoke failed; see $audit." }
+            } elseif ($Action -eq 'SquaresSmoke') {
+                # Two real clients, each with its own Skyrim stand-in in a different Skyrim world.
+                & .\gradlew.bat -PsquaresSmoke exportSquaresLaunch --no-daemon --no-configuration-cache --console=plain
+                if ($LASTEXITCODE -ne 0) { throw "Squares client export failed (exit $LASTEXITCODE)." }
+                $python = if ($localConfig.python) { $localConfig.python } else { (Get-Command python -ErrorAction Stop).Source }
+                $audit = Join-Path $repoRoot ('.tools\squares-audit\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+                & $python -u (Join-Path $repoRoot 'tools\world-squares-smoke.py') $audit
+                if ($LASTEXITCODE -ne 0) { throw "World squares smoke failed; see $audit." }
             } elseif ($Action -eq 'NetworkSmoke') {
                 if (Get-Process -Name SkyrimSE -ErrorAction SilentlyContinue) { throw 'Close Skyrim normally before an isolated shared-memory client check.' }
                 $smokeResult = Join-Path $repoRoot '.tools\network-smoke-game\network-smoke-result.txt'

@@ -203,7 +203,8 @@ public final class TestAssistant {
 		data.put("peerSession", NetworkClient.peerSession());
 		data.put("positionReady", SkyClient.positionReady());
 		data.put("skyrimWorldId", Integer.toHexString(SkyClient.sky().worldId));
-		data.put("hostSkyrimWorldId",Integer.toHexString(ActorSyncClient.hostWorldId()));
+		var square = dev.skycraft.world.SkyOrigin.current();
+		data.put("worldSquare", square == null ? "none" : Integer.toHexString(square.worldId()) + "@" + square.x() + "," + square.z());
 		data.put("worldCompatible",ActorSyncClient.compatible());
 		data.put("shieldRaised",mc.player!=null && mc.player.isBlocking());
 		data.put("health",mc.player==null?0:mc.player.getHealth());

@@ -571,10 +571,20 @@ namespace skycraft
 			// World identity: exterior worldspace or interior cell. A change wipes MC's collision.
 			if (cell) {
 				auto*      ws = a_player->GetWorldspace();
-				const auto id = cell->IsInteriorCell() ? cell->GetFormID() : (ws ? ws->GetFormID() : cell->GetFormID());
+				RE::TESForm* world = cell->IsInteriorCell() || !ws ? static_cast<RE::TESForm*>(cell) : ws;
+				const auto id = world->GetFormID();
 				if (id != worldId) {
 					logger::info("world changed {:08X} -> {:08X}", worldId, id);
 					worldId = id;
+					// Minecraft gives each world its own square of its map, by this identity.
+					proto::WorldInfo info{};
+					info.worldId = id;
+					info.localId = world->GetLocalFormID();
+					if (auto* file = world->GetFile(0)) {
+						const auto name = file->GetFilename();
+						std::memcpy(info.plugin, name.data(), std::min(name.size(), sizeof(info.plugin) - 1));
+					}
+					link.WriteWorldInfo(info);
 					Dig::SetWorld(id);
 					++epoch;
 					Collision::Get().Reset(epoch);

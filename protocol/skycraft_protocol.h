@@ -250,7 +250,8 @@ namespace skycraft::proto
 	{
 		std::uint32_t seq;
 		std::uint32_t count;
-		std::uint8_t  pad[0x40 - 8];
+		std::uint32_t worldId;  // the world (SkyState::worldId) these positions are in
+		std::uint8_t  pad[0x40 - 12];
 		ActorRecord   actors[kMaxActors];
 	};
 	static_assert(sizeof(ActorTable) == 0x40 + 64 * kMaxActors);
@@ -343,6 +344,24 @@ namespace skycraft::proto
 	};
 	static_assert(sizeof(WorldEntities) == 0x40 + sizeof(WorldEntity) * kMaxWorldEntities);
 	static_assert(kOffWorldEntities + sizeof(WorldEntities) <= kOffCollisionRing);
+
+	// ---- world identity @0x1FFC0 (Skyrim -> MC, seqlock) --------------------------------------
+	// SkyState::worldId as a key that doesn't depend on the load order: the plugin that defines the
+	// worldspace or interior cell, and the form's ID within that plugin. Minecraft gives every Skyrim
+	// world its own square of its map by this key. Positions in this protocol stay relative to the
+	// world they are in; only Minecraft adds the square's origin.
+	inline constexpr std::uint64_t kOffWorldInfo = 0x1FFC0;
+
+	struct WorldInfo
+	{
+		std::uint32_t seq;
+		std::uint32_t worldId;     // as in SkyState
+		std::uint32_t localId;     // FormID within its plugin
+		char          plugin[52];  // the plugin's file name, NUL-terminated
+	};
+	static_assert(sizeof(WorldInfo) == 64);
+	static_assert(kOffWorldEntities + sizeof(WorldEntities) <= kOffWorldInfo);
+	static_assert(kOffWorldInfo + sizeof(WorldInfo) <= kOffCollisionRing);
 
 	// ---- render ring (MC -> Skyrim) -----------------------------------------------------------
 	// Byte ring like the collision ring. Minecraft ships its own block meshes (built by Minecraft's

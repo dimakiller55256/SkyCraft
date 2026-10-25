@@ -59,13 +59,12 @@ public final class SkyCombat {
 	private record GuestActors(List<SkyLink.Actor> actors,int tick) {}
 	private static final Map<java.util.UUID, GuestActors> GUESTS = new HashMap<>();
 	private static java.util.UUID hostOwner;
-	private static final SkyLink.SkyState HOST_WORLD=new SkyLink.SkyState();
 	public static void guestActors(ServerPlayer player,List<SkyLink.Actor> actors) {
 		if(dev.skycraft.net.SkyNet.isHost(player)) return;
 		int tick=player.level().getServer().getTickCount();
 		var previous=GUESTS.get(player.getUUID());
 		if(previous!=null && tick-previous.tick()<2) return;
-		var valid=actors.stream().filter(a -> a.formId()!=0 && Float.isFinite(a.x()) && Float.isFinite(a.y()) && Float.isFinite(a.z())
+		var valid=actors.stream().filter(a -> a.formId()!=0 && Double.isFinite(a.x()) && Double.isFinite(a.y()) && Double.isFinite(a.z())
 			&& Float.isFinite(a.yaw()) && Float.isFinite(a.width()) && Float.isFinite(a.height()) && a.width()>=0.3f && a.width()<=6
 			&& a.height()>=0.3f && a.height()<=12 && player.distanceToSqr(a.x(),a.y(),a.z())<=96*96).limit(Proto.MAX_ACTORS).toList();
 		GUESTS.put(player.getUUID(),new GuestActors(valid,tick));
@@ -104,11 +103,6 @@ public final class SkyCombat {
 				var snapshot=GUESTS.get(player.getUUID());
 				if(snapshot!=null && server.getTickCount()-snapshot.tick()<=60) sync(player,snapshot.actors());
 				else sync(player,List.of());
-			}
-			if(server.getTickCount()%10==0 && dev.skycraft.net.SkyNet.isHost(player)) {
-				boolean ready=SkyLink.readSkyState(HOST_WORLD) && HOST_WORLD.inGame() && !HOST_WORLD.loading();
-				for(var guest:players) if(!dev.skycraft.net.SkyNet.isHost(guest) && net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(guest,dev.skycraft.net.ActorSync.WorldContext.TYPE))
-					net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(guest,new dev.skycraft.net.ActorSync.WorldContext(HOST_WORLD.worldId,ready));
 			}
 			for(var proxy:TABLES.getOrDefault(player.getUUID(),Map.of()).values()) {
 				float[] hit=proxy.takeHit();

@@ -31,16 +31,16 @@ public final class SkyNet {
 		@Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
 	}
 
-	/** Guest -> server: the guest's Skyrim hit them (as proto::InputEvent kInHurt). */
-	public record Hurt(int kind, float skyrimDamage, int attackerFormId, int flags, boolean hasPosition, float x, float y, float z) implements CustomPacketPayload {
-		public static final Type<Hurt> TYPE = new Type<>(Identifier.fromNamespaceAndPath(SkyCraft.MOD_ID, "hurt_v2"));
+	/** Guest -> server: the guest's Skyrim hit them (as proto::InputEvent kInHurt); the attacker at its map position. */
+	public record Hurt(int kind, float skyrimDamage, int attackerFormId, int flags, boolean hasPosition, double x, double y, double z) implements CustomPacketPayload {
+		public static final Type<Hurt> TYPE = new Type<>(Identifier.fromNamespaceAndPath(SkyCraft.MOD_ID, "hurt_v3"));
 		public static final StreamCodec<RegistryFriendlyByteBuf, Hurt> CODEC = new StreamCodec<>() {
 			@Override public Hurt decode(RegistryFriendlyByteBuf b) {
-				return new Hurt(b.readVarInt(),b.readFloat(),b.readInt(),b.readVarInt(),b.readBoolean(),b.readFloat(),b.readFloat(),b.readFloat());
+				return new Hurt(b.readVarInt(),b.readFloat(),b.readInt(),b.readVarInt(),b.readBoolean(),b.readDouble(),b.readDouble(),b.readDouble());
 			}
 			@Override public void encode(RegistryFriendlyByteBuf b,Hurt h) {
 				b.writeVarInt(h.kind);b.writeFloat(h.skyrimDamage);b.writeInt(h.attackerFormId);b.writeVarInt(h.flags);
-				b.writeBoolean(h.hasPosition);b.writeFloat(h.x);b.writeFloat(h.y);b.writeFloat(h.z);
+				b.writeBoolean(h.hasPosition);b.writeDouble(h.x);b.writeDouble(h.y);b.writeDouble(h.z);
 			}
 		};
 
@@ -96,6 +96,7 @@ public final class SkyNet {
 	public static void init() {
 		ActorSync.init();
 		DigSync.init();
+		WorldSync.init();
 		PayloadTypeRegistry.clientboundPlay().register(TestSession.TYPE, TestSession.CODEC);
 		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			if (ServerPlayNetworking.canSend(handler.player, TestSession.TYPE))
@@ -120,7 +121,7 @@ public final class SkyNet {
 			ServerPlayer player = context.player();
 			// A hit's worth of damage, whatever the guest's client claims (friends only, but still).
 			float damage = Math.max(0.0F, Math.min(payload.skyrimDamage(), 10000.0F));
-			var position=payload.hasPosition() && Float.isFinite(payload.x()) && Float.isFinite(payload.y()) && Float.isFinite(payload.z())
+			var position=payload.hasPosition() && Double.isFinite(payload.x()) && Double.isFinite(payload.y()) && Double.isFinite(payload.z())
 				? new net.minecraft.world.phys.Vec3(payload.x(),payload.y(),payload.z()) : null;
 			// SkyCombat scopes FormIDs to this player's actor table.
 			context.server().execute(() -> SkyCombat.hurtPlayer(player, payload.kind(), damage, payload.attackerFormId(), payload.flags(), position));

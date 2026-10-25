@@ -15,6 +15,7 @@ public final class SkyCraftClient implements ClientModInitializer {
 		NetworkMenu.register();
 		DigSyncClient.init();
 		NetworkClient.register();
+		SkyWorldsClient.init();
 		ActorSyncClient.init();
 		dev.skycraft.combat.SkyrimActorEntity.setLocalPick(actor -> {
 			var player=net.minecraft.client.Minecraft.getInstance().player;

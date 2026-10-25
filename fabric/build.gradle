@@ -141,6 +141,14 @@ processResources {
 	filesMatching("fabric.mod.json") {
 		expand "version": version
 	}
+	// SkyCraft Link (../link, built by tools/dev.ps1 -Action BuildLink) ships inside the mod when it
+	// has been built; without it the Steam menu says it's missing. -PlinkExe=<path> picks another.
+	def linkExe = file(providers.gradleProperty("linkExe").getOrElse("../.tools/link-build/Release/SkyCraftLink.exe"))
+	from(linkExe.parentFile) {
+		include linkExe.name
+		rename { "SkyCraftLink.exe" }
+		into "skycraft"
+	}
 }
 
 tasks.withType(JavaCompile).configureEach {

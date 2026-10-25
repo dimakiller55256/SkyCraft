@@ -69,7 +69,8 @@ public final class NetworkMenu extends Screen {
             }
         }).bounds(x,174,w,20).build();copy.active=server!=null&&server.isPublished();addRenderableWidget(copy);
         if(server!=null&&server.isPublished()) status=Component.literal("LAN: "+server.getPort()+", "+(server.usesAuthentication()?"ONLINE":"OFFLINE")+", игроков: "+server.getPlayerCount());
-        addRenderableWidget(Button.builder(Component.literal("Назад"),b->onClose()).bounds(x,height-25,w,20).build());
+        addRenderableWidget(Button.builder(Component.literal("Steam: друзья"),b->minecraft.gui.setScreen(new SteamMenu(this))).bounds(x,height-25,w/2-2,20).build());
+        addRenderableWidget(Button.builder(Component.literal("Назад"),b->onClose()).bounds(x+w/2+2,height-25,w/2-2,20).build());
     }
     private Component authLabel() {return Component.literal(online?"Сессия: ONLINE":"Сессия: OFFLINE (частная LAN)");}
     private Component addressLabel() {return Component.literal(addresses.get(addressIndex));}

@@ -27,7 +27,7 @@ import java.util.UUID;
 final class GameplaySmoke {
     private final boolean host="host".equals(System.getProperty("skycraft.gameplaySmokeRole"));
     private final long deadline=System.nanoTime()+240_000_000_000L;
-    private int step,ticks,port; private boolean done; private BlockPos dug;
+    private int step,ticks,port; private boolean done,menuChecked; private BlockPos dug;
     private Path peer;
     private volatile int combatStep,combatAt;
     private volatile String combatResult;
@@ -68,9 +68,16 @@ final class GameplaySmoke {
                 }
                 case 3 -> {
                     if(++ticks<15)return;
-                    net.minecraft.client.Screenshot.grab(mc.gameDirectory,"gameplay-network-menu.png",mc.gameRenderer.mainRenderTarget(),1,c->{});
-                    mc.gui.setScreen(null);
-                    inputCheck(mc);
+                    if(!menuChecked){
+                        net.minecraft.client.Screenshot.grab(mc.gameDirectory,"gameplay-network-menu.png",mc.gameRenderer.mainRenderTarget(),1,c->{});
+                        mc.gui.setScreen(null);
+                        inputCheck(mc);
+                        menuChecked=true;
+                        if(steamLink()){mc.gui.setScreen(new dev.skycraft.client.SteamMenu(null));press(mc,"Открыть свой мир друзьям в Steam");}
+                    }
+                    // Through SkyCraft Link the guest waits until our link says the world is open to friends.
+                    if(steamLink()&&!(dev.skycraft.client.SteamLink.running()&&dev.skycraft.client.SteamLink.status().startsWith("Мир открыт")))return;
+                    if(steamLink())mc.gui.setScreen(null);
                     Files.writeString(mc.gameDirectory.toPath().resolve("port.txt"),Integer.toString(port));step=4;
                 }
                 case 4 -> {
@@ -147,10 +154,17 @@ final class GameplaySmoke {
             }
         }catch(Exception e){dev.skycraft.SkyCraft.LOG.error("Gameplay smoke failed",e);finish(mc,"FAIL: "+e);}
     }
+    /** Both clients run SkyCraft Link from the Steam menu (over its loopback link) instead of joining the LAN port. */
+    private static boolean steamLink(){return "steamlink".equals(System.getProperty("skycraft.gameplayJoin"));}
     private void guest(Minecraft mc)throws Exception {
         if(step==0){
             if(!(mc.gui.screen() instanceof TitleScreen title)||!Files.exists(peer.resolve("port.txt")))return;
-            NetworkClient.connect(mc,title,dev.skycraft.network.Endpoint.parse("127.0.0.1:"+Files.readString(peer.resolve("port.txt"))));step=1;
+            if(!steamLink()){NetworkClient.connect(mc,title,dev.skycraft.network.Endpoint.parse("127.0.0.1:"+Files.readString(peer.resolve("port.txt"))));step=1;return;}
+            if(dev.skycraft.client.SteamLink.role()!=dev.skycraft.client.SteamLink.Role.GUEST){dev.skycraft.client.SteamLink.join(mc,"auto");return;}
+            if(dev.skycraft.client.SteamLink.joinedAddress()==null)return;
+            // As Skyrim's frames would: MirrorWorld joins the address the link handed it.
+            dev.skycraft.client.MirrorWorld.openWhenReady(mc);
+            if(NetworkClient.activeAttempt()!=0)step=1;
         }else if(step==1){
             if(mc.player==null||mc.level==null||mc.isLocalServer())return;
             dug=mc.player.blockPosition().offset(1,0,0);
@@ -164,7 +178,8 @@ final class GameplaySmoke {
             mc.disconnectWithSavingScreen();mc.gui.setScreen(new TitleScreen());ticks=0;step=3;
         }else if(step==3){
             if(++ticks<20)return;
-            NetworkClient.connect(mc,new TitleScreen(),dev.skycraft.network.Endpoint.parse("127.0.0.1:"+Files.readString(peer.resolve("port.txt"))));step=4;
+            String address=steamLink()?dev.skycraft.client.SteamLink.joinedAddress():"127.0.0.1:"+Files.readString(peer.resolve("port.txt"));
+            NetworkClient.connect(mc,new TitleScreen(),dev.skycraft.network.Endpoint.parse(address));step=4;
         }else if(step==4){
             if(mc.level==null||mc.player==null||mc.isLocalServer())return;
             if(mc.gui.screen()!=null)return; // A player/chunk exists before the join loading screen closes.

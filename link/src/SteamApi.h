@@ -20,6 +20,7 @@ namespace link::steam
 	// Callback ids (k_i...Callbacks + n).
 	inline constexpr int kGameLobbyJoinRequested = 333;
 	inline constexpr int kLobbyEnter = 504;
+	inline constexpr int kLobbyDataUpdate = 505;
 	inline constexpr int kLobbyChatUpdate = 506;
 	inline constexpr int kLobbyCreated = 513;
 	inline constexpr int kAPICallCompleted = 703;
@@ -78,6 +79,14 @@ namespace link::steam
 	};
 	static_assert(offsetof(LobbyChatUpdate, state) == 24);
 
+	struct LobbyDataUpdate  // LobbyDataUpdate_t
+	{
+		SteamID      lobby;
+		SteamID      member;  // the lobby itself when it is the lobby's own data
+		std::uint8_t success;
+	};
+	static_assert(offsetof(LobbyDataUpdate, success) == 16);
+
 	struct GameLobbyJoinRequested  // GameLobbyJoinRequested_t
 	{
 		SteamID lobby;
@@ -134,6 +143,7 @@ namespace link::steam
 		int (*GetNumLobbyMembers)(void*, SteamID) = nullptr;
 		SteamID (*GetLobbyMemberByIndex)(void*, SteamID, int) = nullptr;
 		bool (*InviteUserToLobby)(void*, SteamID, SteamID) = nullptr;
+		bool (*RequestLobbyData)(void*, SteamID) = nullptr;
 
 		int (*GetFriendCount)(void*, int) = nullptr;
 		SteamID (*GetFriendByIndex)(void*, int, int) = nullptr;

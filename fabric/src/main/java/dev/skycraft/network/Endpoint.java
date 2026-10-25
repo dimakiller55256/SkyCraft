@@ -75,6 +75,11 @@ public record Endpoint(String host, int port) {
 		}
 	}
 
+	/** This PC itself (SkyCraft Link's local port, a test server): never through a proxy. */
+	public boolean loopback() {
+		return host.equals("localhost") || host.startsWith("127.") || host.equals("::1") || host.equals("0:0:0:0:0:0:0:1");
+	}
+
 	public String authority() {
 		return (host.contains(":") ? "[" + host + "]" : host) + ":" + port;
 	}

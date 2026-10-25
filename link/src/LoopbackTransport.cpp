@@ -13,7 +13,7 @@ namespace link
 	std::unique_ptr<LoopbackTransport> LoopbackTransport::Host(std::uint16_t a_port, std::string& a_error)
 	{
 		std::unique_ptr<LoopbackTransport> t(new LoopbackTransport());
-		t->listening_ = net::Listen(a_port, nullptr);
+		t->listening_ = net::Listen(a_port, &t->port_);
 		if (t->listening_ == INVALID_SOCKET) {
 			a_error = "can't listen on 127.0.0.1:" + std::to_string(a_port) + ": " + net::ErrorText(::WSAGetLastError());
 			return nullptr;
@@ -34,6 +34,15 @@ namespace link
 			net::Close(link.socket);
 		}
 		net::Close(listening_);
+	}
+
+	PeerId LoopbackTransport::HostPeer()
+	{
+		if (listening_ != INVALID_SOCKET) {
+			return 0;
+		}
+		const auto it = links_.find(kHost);
+		return it != links_.end() && !it->second.connecting ? kHost : 0;
 	}
 
 	std::string LoopbackTransport::Name(PeerId a_peer) { return a_peer == kHost ? "host" : "guest-" + std::to_string(a_peer - 0x1000 + 1); }
@@ -139,6 +148,7 @@ namespace link
 				auto& link = links_[kHost];
 				link.socket = s;
 				link.connecting = true;
+				link.since = now;
 			}
 		}
 		std::vector<PeerId> peers;
@@ -152,17 +162,18 @@ namespace link
 			}
 			auto& link = it->second;
 			if (link.connecting) {
-				WSAPOLLFD fd{ link.socket, POLLWRNORM, 0 };
-				if (::WSAPoll(&fd, 1, 0) > 0) {
-					if ((fd.revents & (POLLERR | POLLHUP)) || net::PendingError(link.socket) != 0) {
-						net::Close(link.socket);
-						links_.erase(it);  // not up yet: try again later, nothing was lost
-						continue;
-					}
-					link.connecting = false;
-				} else {
+				WSAPOLLFD  fd{ link.socket, POLLWRNORM, 0 };
+				const bool ready = ::WSAPoll(&fd, 1, 0) > 0;
+				// Older Windows 10 never reports a refused connect through WSAPoll: the socket's error does.
+				if (net::PendingError(link.socket) != 0 || (ready && (fd.revents & (POLLERR | POLLHUP))) || now - link.since > std::chrono::seconds(3)) {
+					net::Close(link.socket);
+					links_.erase(it);  // not up yet: try again later, nothing was lost
 					continue;
 				}
+				if (!ready) {
+					continue;
+				}
+				link.connecting = false;
 			}
 			ReadLink(peer, link, a_out);
 			if (auto again = links_.find(peer); again != links_.end() && !WriteLink(again->second)) {

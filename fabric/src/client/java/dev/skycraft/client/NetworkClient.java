@@ -54,7 +54,7 @@ public final class NetworkClient {
 			peerSession = java.util.Map.of("runId", payload.runId(), "version", dev.skycraft.network.DiagnosticText.safe(payload.version()));
 			NetworkDiagnostics.event("peer_session", java.util.Map.of("session", payload.runId(), "mod_version", dev.skycraft.network.DiagnosticText.safe(payload.version())));
 		});
-		ClientLifecycleEvents.CLIENT_STOPPING.register(minecraft -> { cancel(); NetworkDiagnostics.shutdown(); });
+		ClientLifecycleEvents.CLIENT_STOPPING.register(minecraft -> { cancel(); SteamLink.stop(); NetworkDiagnostics.shutdown(); });
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, minecraft) -> {
 			joined = true;
 			NetworkDiagnostics.position("world_join", minecraft);
@@ -133,7 +133,7 @@ public final class NetworkClient {
 		try {
 			NetworkConfig config = config(minecraft);
 			NetworkDiagnostics.config(config);
-			if (config.mode() == NetworkConfig.Mode.DIRECT) {
+			if (config.mode() == NetworkConfig.Mode.DIRECT || endpoint.loopback()) {
 				start(minecraft, title, endpoint.authority(), endpoint.authority());
 				return;
 			}

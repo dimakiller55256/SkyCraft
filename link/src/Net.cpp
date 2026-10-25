@@ -1,6 +1,6 @@
 #include "Net.h"
 
-#include <mstcpip.h>
+#include <mswsock.h>
 
 #include <system_error>
 

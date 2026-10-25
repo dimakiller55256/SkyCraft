@@ -88,6 +88,7 @@ public final class MirrorWorld {
 	/** Every client tick: a note for the player once they're in a world again. */
 	public static void tick(Minecraft minecraft) {
 		NetworkClient.tick(minecraft);
+		SteamLink.tick(minecraft);
 		if (pendingNote != null && minecraft.player != null) {
 			minecraft.gui.hud.getChat().addClientSystemMessage(net.minecraft.network.chat.Component.literal(pendingNote));
 			pendingNote = null;

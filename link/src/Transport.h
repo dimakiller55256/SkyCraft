@@ -25,6 +25,8 @@ namespace link
 		virtual ~Transport() = default;
 
 		virtual PeerId      Self() const = 0;
+		// Guest: the host, once the transport reached it (0 until then). Host: 0.
+		virtual PeerId      HostPeer() { return 0; }
 		virtual std::string Name(PeerId a_peer) = 0;
 		// Reliable: ordered and resent until delivered; otherwise it may be lost. False: no room
 		// right now, the caller keeps the data and tries again.

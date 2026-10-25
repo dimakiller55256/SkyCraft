@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <iterator>
 #include <set>
 #include <string_view>
 #include <type_traits>
@@ -62,7 +63,7 @@ namespace link::steam
 		// or "1" "D:\\SteamLibrary" in the format before 2021.
 		std::vector<fs::path> Libraries(const fs::path& a_steam)
 		{
-			std::vector<fs::path> out{ a_steam };
+			std::vector<fs::path> out{ fs::path(a_steam).make_preferred() };  // the registry has "d:/steam"
 			std::ifstream         file(a_steam / L"steamapps" / L"libraryfolders.vdf", std::ios::binary);
 			std::string           line;
 			auto                  digits = [](const std::string& a_s) { return !a_s.empty() && std::ranges::all_of(a_s, [](char a_c) { return a_c >= '0' && a_c <= '9'; }); };
@@ -81,7 +82,7 @@ namespace link::steam
 					at = i + 1;
 				}
 				if (tokens.size() == 2 && (tokens[0] == "path" || (digits(tokens[0]) && tokens[1].find(':') != std::string::npos))) {
-					out.emplace_back(Wide(tokens[1]));
+					out.push_back(fs::path(Wide(tokens[1])).make_preferred());
 				}
 			}
 			return out;
@@ -126,7 +127,7 @@ namespace link::steam
 			ok &= need(a_api.ManualDispatch_GetAPICallResult, { "SteamAPI_ManualDispatch_GetAPICallResult" });
 
 			ok &= need(a_api.SteamMatchmaking, { "SteamAPI_SteamMatchmaking_v009" });
-			ok &= need(a_api.SteamFriends, { "SteamAPI_SteamFriends_v017" });
+			ok &= need(a_api.SteamFriends, { "SteamAPI_SteamFriends_v018", "SteamAPI_SteamFriends_v017" });  // v018: SDK 1.60+
 			ok &= need(a_api.SteamUser, { "SteamAPI_SteamUser_v023", "SteamAPI_SteamUser_v022", "SteamAPI_SteamUser_v021", "SteamAPI_SteamUser_v020" });
 			ok &= need(a_api.SteamNetworkingMessages, { "SteamAPI_SteamNetworkingMessages_SteamAPI_v002" });
 			ok &= need(a_api.SteamNetworkingUtils, { "SteamAPI_SteamNetworkingUtils_SteamAPI_v004", "SteamAPI_SteamNetworkingUtils_SteamAPI_v003" });
@@ -140,6 +141,7 @@ namespace link::steam
 			ok &= need(a_api.GetNumLobbyMembers, { "SteamAPI_ISteamMatchmaking_GetNumLobbyMembers" });
 			ok &= need(a_api.GetLobbyMemberByIndex, { "SteamAPI_ISteamMatchmaking_GetLobbyMemberByIndex" });
 			ok &= need(a_api.InviteUserToLobby, { "SteamAPI_ISteamMatchmaking_InviteUserToLobby" });
+			ok &= need(a_api.RequestLobbyData, { "SteamAPI_ISteamMatchmaking_RequestLobbyData" });
 
 			ok &= need(a_api.GetFriendCount, { "SteamAPI_ISteamFriends_GetFriendCount" });
 			ok &= need(a_api.GetFriendByIndex, { "SteamAPI_ISteamFriends_GetFriendByIndex" });
@@ -180,10 +182,10 @@ namespace link::steam
 		std::vector<std::wstring> out;
 		std::set<std::wstring>    files;
 		auto                      add = [&](const fs::path& a_file) {
-            std::error_code ec;
-            if (out.size() < kMaxCandidates && fs::is_regular_file(a_file, ec) && files.insert(Key(a_file)).second) {
-                out.push_back(a_file.wstring());
-            }
+			std::error_code ec;
+			if (out.size() < kMaxCandidates && fs::is_regular_file(a_file, ec) && files.insert(Key(a_file)).second) {
+				out.push_back(a_file.wstring());
+			}
 		};
 
 		wchar_t self[MAX_PATH * 2]{};
@@ -264,7 +266,7 @@ namespace link::steam
 			std::string missing;
 			if (!Bind(library, api, missing)) {
 				::FreeLibrary(library);
-				a_report.push_back(Utf8(candidate) + ": too old, it has no " + missing);
+				a_report.push_back(Utf8(candidate) + ": unusable, it has no " + missing);
 				continue;
 			}
 			api.dll = library;

@@ -21,8 +21,10 @@ namespace link
 
 		~LoopbackTransport() override;
 
-		PeerId      Self() const override { return listening_ ? kHost : 2; }
-		std::string Name(PeerId a_peer) override;
+		PeerId        Self() const override { return listening_ != INVALID_SOCKET ? kHost : 2; }
+		PeerId        HostPeer() override;
+		std::uint16_t Port() const { return port_; }  // host: the port guests connect to
+		std::string   Name(PeerId a_peer) override;
 		bool        Send(PeerId a_peer, int a_channel, std::span<const std::uint8_t> a_data, bool a_reliable) override;
 		void        Pump(std::vector<Message>& a_out) override;
 		void        AddSockets(std::vector<WSAPOLLFD>& a_fds) override;
@@ -32,11 +34,12 @@ namespace link
 	private:
 		struct Link
 		{
-			SOCKET                    socket = INVALID_SOCKET;
-			bool                      connecting = false;
-			std::vector<std::uint8_t> in;
-			std::vector<std::uint8_t> out;
-			std::size_t               outSent = 0;
+			SOCKET                                socket = INVALID_SOCKET;
+			bool                                  connecting = false;
+			std::chrono::steady_clock::time_point since{};
+			std::vector<std::uint8_t>             in;
+			std::vector<std::uint8_t>             out;
+			std::size_t                           outSent = 0;
 		};
 
 		LoopbackTransport() = default;
@@ -45,6 +48,7 @@ namespace link
 		void Drop(PeerId a_peer);
 
 		SOCKET                                listening_ = INVALID_SOCKET;
+		std::uint16_t                         port_ = 0;
 		std::uint16_t                         hostPort_ = 0;
 		std::map<PeerId, Link>                links_;
 		std::vector<PeerId>                   lost_;

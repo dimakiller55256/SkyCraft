@@ -20,7 +20,7 @@ namespace {
     Json history = Json::array(), loaded = Json::array();
     std::string character;
     std::string lastTestControl;
-    bool testProfile=false;
+    bool testProfile=false, fallback=true;
     bool loadedReady = false, ready = false, blocked = false, removing = false, announced = false;
     std::filesystem::path journalDir;
     ULONGLONG lastSend = 0;
@@ -41,6 +41,51 @@ namespace {
         CloseHandle(file);
         return ok && MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
     }
+    // Anything the table doesn't name still becomes something fitting, so nothing a player picks
+    // up (mods' items too) stays behind. Keys and generated forms have no stable identity or use.
+    const char* FallbackItem(RE::TESForm* form) {
+        using T=RE::FormType;
+        using S=RE::BGSBipedObjectForm::BipedObjectSlot;
+        switch(form->GetFormType()) {
+        case T::Ammo: return "minecraft:arrow";
+        case T::Book: return "minecraft:book";
+        case T::Scroll: return "minecraft:paper";
+        case T::Ingredient: return "minecraft:wheat_seeds";
+        case T::SoulGem: return "minecraft:amethyst_shard";
+        case T::Light: return "minecraft:torch";
+        case T::Misc: return "minecraft:iron_nugget";
+        case T::AlchemyItem: {
+            auto* potion=form->As<RE::AlchemyItem>();
+            return potion->IsFood()?"minecraft:bread":potion->IsPoison()?"minecraft:spider_eye":"minecraft:honey_bottle";
+        }
+        case T::Weapon: {
+            auto* weapon=form->As<RE::TESObjectWEAP>();
+            if(weapon->IsBow()||weapon->IsCrossbow())return "minecraft:bow";
+            if(weapon->IsStaff())return "minecraft:stick";
+            return weapon->IsOneHandedAxe()||weapon->IsTwoHandedAxe()?"minecraft:iron_axe":"minecraft:iron_sword";
+        }
+        case T::Armor: {
+            auto* armor=form->As<RE::TESObjectARMO>();
+            if(armor->IsShield())return "minecraft:shield";
+            if(armor->IsClothing()||armor->HasPartOf(S::kRing)||armor->HasPartOf(S::kAmulet))return "minecraft:gold_nugget";
+            const bool heavy=armor->IsHeavyArmor();
+            if(armor->HasPartOf(S::kBody))return heavy?"minecraft:iron_chestplate":"minecraft:leather_chestplate";
+            if(armor->HasPartOf(S::kHead)||armor->HasPartOf(S::kHair))return heavy?"minecraft:iron_helmet":"minecraft:leather_helmet";
+            if(armor->HasPartOf(S::kFeet))return heavy?"minecraft:iron_boots":"minecraft:leather_boots";
+            return "minecraft:leather";
+        }
+        default: return nullptr;
+        }
+    }
+    bool Convertible(RE::FormID id) {
+        if(table.contains(id))return true;
+        if(!fallback)return false;
+        auto* form=RE::TESForm::LookupByID(id);auto* file=form?form->GetFile(0):nullptr;const char* item=form&&file?FallbackItem(form):nullptr;
+        if(!item)return false;
+        table.emplace(id,Mapping{std::string(file->GetFilename()),item,form->GetLocalFormID(),1});
+        logger::info("item conversion fallback: {} {:08X} -> {}",form->GetName(),id,item);
+        return true;
+    }
     bool Persist() {
         try {
             std::filesystem::create_directories(journalDir);
@@ -58,7 +103,6 @@ namespace {
         if (entry->IsWorn()) return "equipped";
         if (entry->IsFavorited()) return "favorited";
         if (entry->IsPoisoned()) return "poisoned";
-        if (entry->GetOwner()) return "ownership_marked";
         auto* enchantable = entry->object->As<RE::TESEnchantableForm>();
         if (enchantable && enchantable->formEnchanting) return "base_enchantment";
         if (entry->extraLists) for (auto* extra : *entry->extraLists) {
@@ -122,7 +166,7 @@ namespace {
             if (version != 1 || length > 8*1024*1024) { Pause("unsupported or oversized Skyrim item checkpoint"); continue; }
             std::string bytes(length,'\0');
             if (stream->ReadRecordData(bytes.data(), length) != length) { Pause("truncated Skyrim item checkpoint"); continue; }
-            try { auto data=Json::parse(bytes);character=data.at("character");if(!std::regex_match(character,std::regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")))throw std::runtime_error("invalid Skyrim item profile identity");loaded=data.at("transactions");loadedReady=true;testProfile=data.value("test",false);blocked=blocked||data.value("quarantined",false); }
+            try { auto data=Json::parse(bytes);character=data.at("character");if(!std::regex_match(character,std::regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")))throw std::runtime_error("invalid Skyrim item profile identity");loaded=data.at("transactions");loadedReady=true;testProfile=data.value("test",false); }
             catch (const std::exception& e) { Pause(e.what()); }
         }
     }
@@ -130,7 +174,7 @@ namespace {
         RE::BSEventNotifyControl ProcessEvent(const RE::TESContainerChangedEvent* event, RE::BSTEventSource<RE::TESContainerChangedEvent>*) override {
             std::scoped_lock guard(lock);
             auto* player=RE::PlayerCharacter::GetSingleton();
-            if (event && player && !removing && !blocked && ready && event->newContainer==player->GetFormID() && event->itemCount>0 && table.contains(event->baseObj)) {
+            if (event && player && !removing && !blocked && ready && event->newContainer==player->GetFormID() && event->itemCount>0 && Convertible(event->baseObj)) {
                 if (pickups.size()<1024) pickups.emplace_back(event->baseObj,event->itemCount);
                 else logger::warn("item conversion pickup queue full: item remains in Skyrim");
             }
@@ -155,6 +199,7 @@ void Install() {
         if(std::filesystem::exists(config)){std::ifstream input(config);input>>data;}
         else {data=Json::parse(defaults);if(!AtomicWrite(config,defaults))logger::warn("item table could not be created at {}",config.string());}
         if(!data.value("enabled",true)){logger::info("item conversion disabled in table");return;}
+        fallback=data.value("fallback",true);
         auto* forms=RE::TESDataHandler::GetSingleton();
         std::unordered_set<std::string> keys;
         for(const auto& row:data.at("items")) {
@@ -171,25 +216,20 @@ void BeforeLoad() { std::scoped_lock guard(lock);ready=false;pickups.clear();Lin
 void OnGameLoaded() {
     std::scoped_lock guard(lock);pickups.clear();announced=false;lastSend=0;
     try {
-        if(blocked){Pause("this Skyrim checkpoint is quarantined; load the last consistent checkpoint or collect a report");return;}
-        if(character.empty()) {
-            // A save predating the first checkpoint cannot be safely distinguished from a new
-            // character after conversions. Require recovery instead of minting another identity.
-            if(std::filesystem::exists(journalDir))for(const auto& file:std::filesystem::directory_iterator(journalDir)) {
-                if(file.path().extension()==".json") {std::ifstream in(file.path());Json j;in>>j;const auto records=Checkpoint(j.at("transactions"));if(!j.value("test",false)&&std::any_of(records.begin(),records.end(),[](const auto& r){return r.phase==ItemCheckpoint::Phase::Removing||ItemCheckpoint::Removed(r.phase);})){Pause("save has no item checkpoint but previous conversions exist; load a checkpointed save");return;}}
-            }
-            character=UUID();history=Json::array();ready=false;Persist();return;
-        }
+        // Conversion works from the first moment, with no save of the player's: a save without our
+        // record is a fresh profile, and loading an older save just leaves Minecraft's items alone.
+        blocked=false;
+        if(character.empty()){character=UUID();history=Json::array();loaded=Json::array();}
         history=loaded;
         const auto path=journalDir/(character+".json");
-        if(std::filesystem::exists(path)){std::ifstream in(path);Json j;in>>j;history=j.at("transactions");if(j.value("test",false)!=testProfile){Pause("item journal profile type disagrees with Skyrim checkpoint");return;}}
-        if(!ItemCheckpoint::CanResume(Checkpoint(loaded),Checkpoint(history))){Pause("Skyrim checkpoint and external journal disagree, or removal was interrupted; manual recovery required");return;}
-        for(auto& tx:history)if(tx.at("phase")=="prepared"&&std::none_of(loaded.begin(),loaded.end(),[&](const auto& old){return old.at("id")==tx.at("id");})) {
-            tx.at("phase")="cancelled";tx["reason"]="not_in_loaded_checkpoint";
-            logger::info("item conversion cancelled: {} reason not_in_loaded_checkpoint; no conversion removal performed",tx.at("id").get<std::string>());
+        if(std::filesystem::exists(path)){std::ifstream in(path);Json j;in>>j;history=j.at("transactions");}
+        if(!ItemCheckpoint::CanResume(Checkpoint(loaded),Checkpoint(history)))logger::info("item conversion: this save is older than the journal; items already in Minecraft stay there");
+        for(auto& tx:history) {
+            const auto phase=tx.at("phase").get<std::string>();
+            if(phase=="prepared"||phase=="removing"){tx.at("phase")="cancelled";tx["reason"]="interrupted";logger::info("item conversion cancelled: {} reason interrupted",tx.at("id").get<std::string>());}
         }
         if(!Persist()){Pause("cannot persist resumed item journal");return;}
-        ready=loadedReady;logger::info("item conversion resumed: {} transactions {}",character,history.size());
+        ready=true;logger::info("item conversion resumed: {} transactions {}",character,history.size());
     } catch(const std::exception& e) {Pause(e.what());}
 }
 void PerFrame(RE::PlayerCharacter* player) {
@@ -206,10 +246,7 @@ void PerFrame(RE::PlayerCharacter* player) {
     }
     if(testProfile!=Link::Get().ItemTestWorld()){proto::ItemRequest notice{};notice.action=3;notice.count=testProfile?4:5;Link::Get().WriteItemRequest(notice);pickups.clear();return;}
     if(blocked||table.empty()||!player||player->IsDead()||!State().mcInWorld)return;
-    if(!ready) {
-        if(!announced){logger::info("item conversion: save Skyrim through its menu to initialize a checkpoint");announced=true;}
-        proto::ItemRequest notice{};notice.action=3;notice.count=1;if(testProfile)Fill(notice.id,40,lastTestControl);Link::Get().WriteItemRequest(notice);return;
-    }
+    if(!ready)ready=true;  // a new game, before any load finished: nothing to wait for
     if(!Link::Get().McAlive()||State().skyrimMenuOpen)return;
     try {
         auto* tx=Pending();
@@ -221,12 +258,12 @@ void PerFrame(RE::PlayerCharacter* player) {
             if(protection){logger::info("item conversion protected pickup retained: {:08X} reason {}",formID,protection);return;}
             const int incoming=std::min(count,found->second.first);count=std::min(incoming,4096/map.ratio);if(count<1)return;
             if(incoming>count)pickups.emplace_front(formID,incoming-count);
-            if(history.size()>=8192){Pause("item journal reached its safe size limit");return;}
+            if(history.size()>=4096){history.erase(history.begin(),history.begin()+2048);loaded=history;}  // Minecraft keeps its own receipts
             history.push_back(Json{{"id",UUID()},{"plugin",map.plugin},{"local",map.local},{"item",map.item},{"count",count},{"output",count*map.ratio},{"phase","prepared"},{"target",""}});
             if(!Persist()){history.erase(history.size()-1);Pause("cannot persist preparation; Skyrim inventory unchanged");return;}
             tx=&history.back();lastSend=0;
         }
-        if(!tx){proto::ItemRequest notice{};if(history!=loaded){notice.action=3;notice.count=3;}Link::Get().WriteItemRequest(notice);return;}
+        if(!tx){Link::Get().WriteItemRequest({});return;}
         proto::ItemReply reply{};
         if(Link::Get().ReadItemReply(reply)&&std::string(reply.id,strnlen_s(reply.id,40))==tx->at("id").get<std::string>()) {
             const std::string phase=tx->at("phase");
@@ -252,7 +289,7 @@ void PerFrame(RE::PlayerCharacter* player) {
                 tx->at("phase")="done";if(!Persist()){Pause("delivery receipt journal write failed");return;}
                 logger::info("item conversion delivered: {}",tx->at("id").get<std::string>());Link::Get().WriteItemRequest({});return;
             }
-            if(reply.status==3){if(phase=="removed")Pause("Minecraft rejected a removed item; inspect pending journal");else{(*tx)["detail"]=std::string(reply.message,strnlen_s(reply.message,sizeof(reply.message)));Cancel(*tx,"minecraft_rejected");logger::warn("item conversion rejected; retained in Skyrim: {}",reply.message);}return;}
+            if(reply.status==3){if(phase=="removed"){tx->at("phase")="cancelled";(*tx)["reason"]="minecraft_rejected_after_removal";Persist();logger::error("item conversion lost one transaction: {}",reply.message);}else{(*tx)["detail"]=std::string(reply.message,strnlen_s(reply.message,sizeof(reply.message)));Cancel(*tx,"minecraft_rejected");logger::warn("item conversion rejected; retained in Skyrim: {}",reply.message);}return;}
             if(reply.status==2&&phase=="prepared"){Pause("Minecraft already delivered before known Skyrim removal");return;}
         }
         if(GetTickCount64()-lastSend>=1000)Send(*tx);

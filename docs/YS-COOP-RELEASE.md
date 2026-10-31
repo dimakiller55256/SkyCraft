@@ -1,6 +1,6 @@
-# SkyCraft YS coop.1: установка и проверка сетевой игры
+# SkyCraft YS coop.2: установка и проверка сетевой игры
 
-Сборка `0.1.2-ys.coop.1`: совместимость со Skyrim Together Reborn, свой участок карты для каждой
+Сборка `0.1.2-ys.coop.2`: совместимость со Skyrim Together Reborn, свой участок карты для каждой
 локации Skyrim, исправленное залипание клавиш и игра через Steam без Radmin (SkyCraft Link).
 **JAR и DLL ставятся только вместе и у обоих игроков одинаковые:** протокол общей памяти
 изменился (13), старая DLL с новым JAR не заработает.
@@ -13,8 +13,8 @@
 
 | Файл | Зачем |
 |---|---|
-| `SkyCraft-YS-0.1.2-ys.coop.1-MO2.zip` | Мод для MO2: DLL, настройки, комплект Minecraft (Prism) |
-| `SkyCraft-YS-0.1.2-ys.coop.1-Prism-instance.zip` | Экземпляр Prism, если Minecraft ставите сами |
+| `SkyCraft-YS-0.1.2-ys.coop.2-MO2.zip` | Мод для MO2: DLL, настройки, комплект Minecraft (Prism) |
+| `SkyCraft-YS-0.1.2-ys.coop.2-Prism-instance.zip` | Экземпляр Prism, если Minecraft ставите сами |
 | `отдельно/` | Те же JAR и DLL для ручной замены |
 | `docs/YS-STEAM.md` | Подробно об игре через Steam |
 | `SHA256.txt` | Контрольные суммы |
@@ -33,7 +33,7 @@
    и там (папка `...\instances\SkyCraft\.minecraft\mods`).
 
 **Новая установка:**
-1. MO2 → «Установить мод из архива» → `SkyCraft-YS-0.1.2-ys.coop.1-MO2.zip`. Включите его и
+1. MO2 → «Установить мод из архива» → `SkyCraft-YS-0.1.2-ys.coop.2-MO2.zip`. Включите его и
    Address Library; другую копию SkyCraft отключите.
 2. Запустите Skyrim через SKSE из MO2. SkyCraft сам распакует Minecraft в
    `%LOCALAPPDATA%\SkyCraft` и запустит его. При первом запуске войдите в Microsoft-аккаунт

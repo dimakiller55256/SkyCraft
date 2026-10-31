@@ -958,9 +958,34 @@ namespace skycraft
 			logger::info("combat hooks installed");
 		}
 
+		// Amnesia: an essential NPC beaten to its knees forgets the fight. Skyrim won't let it die, so
+		// without this it would get up and resume forever, and the whole town with it.
+		void ForgetKnockouts(RE::PlayerCharacter* a_player)
+		{
+			auto* lists = RE::ProcessLists::GetSingleton();
+			if (!lists) {
+				return;
+			}
+			for (auto& handle : lists->highActorHandles) {
+				auto actor = handle.get();
+				if (!actor || actor->IsDead() || !actor->IsEssential() || !actor->AsActorState()->IsBleedingOut() || !actor->IsInCombat()) {
+					continue;
+				}
+				actor->StopCombat();
+				lists->StopCombatAndAlarmOnActor(a_player, false);
+				if (auto* faction = actor->GetCrimeFaction()) {
+					a_player->ClearAllCrimeGold(faction);
+				}
+				logger::info("amnesia: {} forgot the fight", actor->GetName());
+			}
+		}
+
 		void PerFrame(RE::PlayerCharacter* a_player, bool a_puppeting, float a_delta)
 		{
 			auto& link = Link::Get();
+			if (link.McAlive()) {
+				ForgetKnockouts(a_player);
+			}
 			if (!a_puppeting) {
 				// Knockdown temporarily hands animation/physics to Skyrim. It must not revoke
 				// Minecraft's health ownership or drop the essential guard during that transition.

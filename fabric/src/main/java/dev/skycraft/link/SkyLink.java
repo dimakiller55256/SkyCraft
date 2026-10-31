@@ -654,7 +654,20 @@ public final class SkyLink {
 		return writeRender(type, header, body, 1);
 	}
 
-	private static synchronized boolean writeRender(int type, java.nio.ByteBuffer header, java.nio.ByteBuffer body, int attempts) {
+	// Skyrim doesn't drain the ring while a menu covers the world or it's loading. Waiting then must
+	// neither hold what the server thread needs (this lock is the render ring's alone) nor stop
+	// Minecraft: a ring that stopped moving fails fast, and callers send again later.
+	private static final Object RENDER_LOCK = new Object();
+	private static final int STALLED_ATTEMPTS = 50;
+	private static long stalledTail = -1;
+
+	private static boolean writeRender(int type, java.nio.ByteBuffer header, java.nio.ByteBuffer body, int attempts) {
+		synchronized (RENDER_LOCK) {
+			return writeRenderLocked(type, header, body, attempts);
+		}
+	}
+
+	private static boolean writeRenderLocked(int type, java.nio.ByteBuffer header, java.nio.ByteBuffer body, int attempts) {
 		MemorySegment s = shm;
 		if (s == null) {
 			return false;
@@ -666,13 +679,18 @@ public final class SkyLink {
 			return false;
 		}
 		long base = OFF_RENDER_RING;
+		long seenTail = -1;
+		int unmoved = 0;
 		for (int attempt = 0; attempt < attempts; attempt++) {
 			long head = s.get(JAVA_LONG, base + RR_HEAD);
 			long tail = (long) LONG.getAcquire(s, base + RR_TAIL);
+			unmoved = tail == seenTail ? unmoved + 1 : 0;
+			seenTail = tail;
 			long pos = head % RR_DATA_BYTES;
 			long pad = pos + msgBytes > RR_DATA_BYTES ? RR_DATA_BYTES - pos : 0;
 			if (RR_DATA_BYTES - (head - tail) < msgBytes + pad) {
-				if (attempt + 1 >= attempts) {
+				if (attempt + 1 >= attempts || tail == stalledTail || unmoved >= STALLED_ATTEMPTS) {
+					stalledTail = tail;
 					break;
 				}
 				try {

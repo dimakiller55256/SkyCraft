@@ -59,6 +59,10 @@ def main():
                 if file.is_file() and file.stat().st_mtime >= started-1:
                     shutil.copyfile(file,audit/f'{role}-{file.name}')
     for log in logs:log.close()
+    # ServerWatchdog: a server tick stuck for seconds freezes every player.
+    stuck=(audit/'Host-game.log').read_text(encoding='utf-8',errors='replace').count('BlockCollisions.computeNext')
+    print(f'Server ticks stuck sweeping collision: {stuck}',flush=True)
+    failed |= stuck>0
     if steam_host:
         # The program must end with the game: a stray one would keep the lobby open.
         left=None

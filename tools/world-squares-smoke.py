@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fake_skyrim as fs  # noqa: E402
 
 SLOT = 16384           # SkyWorlds.SLOT_BLOCKS
+SHOP = 0x133C9
 TAMRIEL = 0x3C
 INTERIOR = 0x000165A3  # Breezehome, as Skyrim.esm numbers it
 HOST_POS = (fs.X0 + 0.5, 100.0, 0.5)
@@ -211,6 +212,18 @@ def main():
                 seen_by_guest, seen_by_host = guest_stand.other_players(), host_stand.other_players()
                 if any(math.dist(p, HOST_POS) < 1.0 for p in seen_by_guest) and any(math.dist(p, GUEST_OUTSIDE) < 1.0 for p in seen_by_host):
                     steps.append(f"each Skyrim hears of the other player where they stand: guest sees {seen_by_guest}, host sees {seen_by_host}")
+                    # A door into a third world: the guest crosses the map diagonally, and back.
+                    guest_stand.move(SHOP, GUEST_INSIDE)
+                    phase, phase_at = 4, now
+            elif phase == 4:
+                if near(gs, (SLOT + GUEST_INSIDE[0], GUEST_INSIDE[1], SLOT + GUEST_INSIDE[2]), f"{SHOP:x}@{SLOT},{SLOT}"):
+                    steps.append(f"guest crossed the map into a third world in {now - phase_at:.1f} s")
+                    guest_stand.move(TAMRIEL, GUEST_OUTSIDE)
+                    phase, phase_at = 5, now
+            elif phase == 5:
+                if near(gs, GUEST_OUTSIDE, "3c@0,0"):
+                    steps.append(f"guest crossed back in {now - phase_at:.1f} s")
+                    time.sleep(3)  # a stuck server shows in its log only once it recovers
                     result = "PASS"
                     break
             for client in (host, guest):
@@ -230,6 +243,16 @@ def main():
         guest.stop()
         report = {"result": result, "steps": steps, "hostState": host.state(), "guestState": guest.state()}
         (audit / "world-squares.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    # ServerWatchdog: where a server tick stuck for seconds was stuck.
+    for name in audit.glob("*"):
+        if name.is_file() and name.suffix in (".log", ".txt"):
+            text = name.read_text(encoding="utf-8", errors="replace")
+            for needle in ("server tick stuck", "Can't keep up"):
+                if needle in text:
+                    at = text.index(needle)
+                    steps.append(f"{name.name}: {text[max(0, at - 60):at + 1500]}")
+                    if "BlockCollisions" in text:
+                        result = "FAIL"
     for step in steps:
         print(" -", step)
     print(f"{result}: Skyrim worlds in separate Minecraft squares, two real clients", flush=True)

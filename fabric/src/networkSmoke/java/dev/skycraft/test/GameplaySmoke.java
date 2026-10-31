@@ -27,7 +27,7 @@ import java.util.UUID;
 final class GameplaySmoke {
     private final boolean host="host".equals(System.getProperty("skycraft.gameplaySmokeRole"));
     private final long deadline=System.nanoTime()+240_000_000_000L;
-    private int step,ticks,port; private boolean done,menuChecked; private BlockPos dug;
+    private int step,ticks,port; private boolean done,menuChecked; private BlockPos dug; private net.minecraft.world.phys.Vec3 jumpFrom;
     private Path peer;
     private volatile int combatStep,combatAt;
     private volatile String combatResult;
@@ -175,6 +175,10 @@ final class GameplaySmoke {
             if(NetworkClient.activeAttempt()!=0)step=1;
         }else if(step==1){
             if(mc.player==null||mc.level==null||mc.isLocalServer())return;
+            // A guest walking through a Skyrim door lands in another square of the map, as far as this.
+            if(jumpFrom==null){jumpFrom=mc.player.position();ticks=0;mc.player.setPos(jumpFrom.x+16384,jumpFrom.y,jumpFrom.z+16384);return;}
+            if(++ticks==40)mc.player.setPos(jumpFrom.x,jumpFrom.y,jumpFrom.z);
+            if(ticks<80)return;
             dug=mc.player.blockPosition().offset(1,0,0);
             ClientPlayNetworking.send(new SkyNet.DigOpen(0x3c,dug,dev.skycraft.link.Proto.DIG_STONE));
             Files.writeString(mc.gameDirectory.toPath().resolve("dug.txt"),dug.getX()+","+dug.getY()+","+dug.getZ());step=2;

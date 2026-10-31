@@ -6,7 +6,7 @@ import net.minecraft.server.MinecraftServer;
 
 /** A server tick stuck for seconds freezes every player: the log shows where it was stuck. */
 final class ServerWatchdog {
-	private static final long STUCK_NANOS = 5_000_000_000L;
+	private static final long STUCK_NANOS = 2_000_000_000L;
 	private static volatile long tickAt;
 	private static volatile Thread serverThread;
 	private static boolean started;
@@ -43,7 +43,7 @@ final class ServerWatchdog {
 					for (var frame : thread.getStackTrace()) {
 						stack.append("\n\tat ").append(frame);
 					}
-					SkyCraft.LOG.warn("SkyCraft: server tick stuck for over 5 s in:{}", stack);
+					SkyCraft.LOG.warn("SkyCraft: server tick stuck for over 2 s in:{}", stack);
 				}
 			}
 		});

@@ -10,6 +10,7 @@
     "EntityPickMixin",
     "EntitySwimMixin",
     "EntityUnknownGroundMixin",
+		"PlayerFarMoveMixin",
     "FallingBlockMixin",
     "FlowingFluidMixin",
     "HopperBlockEntityMixin",

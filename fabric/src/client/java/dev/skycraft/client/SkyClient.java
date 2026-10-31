@@ -5,6 +5,7 @@ import dev.skycraft.client.render.WorldExporter;
 import dev.skycraft.link.Proto;
 import dev.skycraft.link.SkyLink;
 import dev.skycraft.world.SkyCollision;
+import dev.skycraft.world.SkyOrigin;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -122,6 +123,7 @@ public final class SkyClient {
 		hideWindowOnce(minecraft);
 		applyViewportSize(minecraft);
 		MirrorWorld.openWhenReady(minecraft);
+		SkyWorldsClient.frame(minecraft, sky);
 
 		boolean controlsEnabled = !sky.menuOpen() && !sky.loading() && !sky.takingOver() && SkyLink.inputFresh() && ActorSyncClient.compatible();
 		if (!controlsEnabled) {
@@ -147,13 +149,15 @@ public final class SkyClient {
 			lastTeleportSeq = sky.teleportSeq;
 			teleportPending = true;
 		}
-		if (teleportPending && sky.inGame() && !sky.loading() && !sky.takingOver()) {
+		// Skyrim's position is in its own world: wait until the server has placed that world in the map.
+		SkyOrigin.Origin origin = SkyOrigin.of(sky.worldId);
+		if (teleportPending && sky.inGame() && !sky.loading() && !sky.takingOver() && origin != null) {
 			NetworkDiagnostics.position("before_skyrim_teleport", minecraft);
-			requestTeleport(minecraft, sky.x, sky.y, sky.z, sky.yaw, sky.pitch);
+			requestTeleport(minecraft, origin, sky.x, sky.y, sky.z, sky.yaw, sky.pitch);
 			teleportAck = sky.teleportSeq;
 			teleportPending = false;
 			publication.initialized(player, sky.teleportSeq);
-			holdPos = new Vec3(sky.x, sky.y, sky.z);
+			holdPos = new Vec3(origin.toMcX(sky.x), sky.y, origin.toMcZ(sky.z));
 		}
 
 		// Look direction is driven by Skyrim (zero-latency camera); MC uses it for everything else.
@@ -212,6 +216,7 @@ public final class SkyClient {
 		holdUntilReady(minecraft);
 		publishTick(minecraft);
 	}
+
 	private static void freezeDuringTakeover(Minecraft minecraft) {
 		LocalPlayer player=minecraft.player;
 		if (!linked || !sky.takingOver() || player==null) { takeoverHold=null; return; }
@@ -255,7 +260,8 @@ public final class SkyClient {
 			return;
 		}
 		// A player can be created inside this tick, after beginFrame has already run.
-		if (!publication.observe(player, sky.teleportSeq) || teleportPending || !ActorSyncClient.compatible()) { suppressPublication(); return; }
+		SkyOrigin.Origin origin = SkyOrigin.of(sky.worldId);
+		if (!publication.observe(player, sky.teleportSeq) || teleportPending || origin == null || !ActorSyncClient.compatible()) { suppressPublication(); return; }
 		if (qpcFreq == 0) {
 			qpcFreq = SkyLink.qpcFrequency();
 		}
@@ -264,12 +270,12 @@ public final class SkyClient {
 		float remainder = minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(false);
 		mc.tickQpc = SkyLink.qpc() - (long) (remainder * tickMs * qpcFreq / 1000.0);
 		mc.tickMs = tickMs;
-		mc.prevX = player.xo;
+		mc.prevX = origin.toSkyrimX(player.xo);
 		mc.prevY = player.yo;
-		mc.prevZ = player.zo;
-		mc.curX = player.getX();
+		mc.prevZ = origin.toSkyrimZ(player.zo);
+		mc.curX = origin.toSkyrimX(player.getX());
 		mc.curY = player.getY();
-		mc.curZ = player.getZ();
+		mc.curZ = origin.toSkyrimZ(player.getZ());
 		// Same smoothing as Camera.tick(): eye height eases halfway toward the target each tick.
 		if (player != eyePlayer) {
 			eyePlayer = player;
@@ -295,9 +301,11 @@ public final class SkyClient {
 		}
 		if (!publication.observe(player, sky.teleportSeq)) return;
 		if(!ActorSyncClient.compatible()) {
+			// Skyrim's world has no place in the map yet: stay put until the server places it.
+			Vec3 here = holdPos != null ? holdPos : player.position();
 			player.setDeltaMovement(Vec3.ZERO);
-			player.setPos(sky.x,sky.y,sky.z);
-			player.xo=sky.x;player.yo=sky.y;player.zo=sky.z;
+			player.setPos(here.x, here.y, here.z);
+			player.xo=here.x;player.yo=here.y;player.zo=here.z;
 			player.resetFallDistance();
 			return;
 		}
@@ -340,19 +348,25 @@ public final class SkyClient {
 		player.resetFallDistance();
 	}
 
+	private static Vec3 toSkyrim(SkyOrigin.Origin origin, Vec3 mcPosition) {
+		return new Vec3(origin.toSkyrimX(mcPosition.x), mcPosition.y, origin.toSkyrimZ(mcPosition.z));
+	}
+
 	private static Vec3 liftOutOfGeometry(LocalPlayer player, Vec3 pos) {
 		// Stand on the exact Skyrim ground if it is slightly above the feet (up to 2.5 blocks).
 		double ground = SkyCollider.groundAt(pos.x, pos.y, pos.z, 2.5);
 		return !Double.isNaN(ground) && ground > pos.y ? new Vec3(pos.x, ground, pos.z) : pos;
 	}
 
-	private static void requestTeleport(Minecraft minecraft, double x, double y, double z, float yaw, float pitch) {
+	/** Skyrim put its player at ({@code skyX}, {@code y}, {@code skyZ}) of its world; that world's square holds it. */
+	private static void requestTeleport(Minecraft minecraft, SkyOrigin.Origin origin, double skyX, double y, double skyZ, float yaw, float pitch) {
 		LocalPlayer player = minecraft.player;
+		double x = origin.toMcX(skyX), z = origin.toMcZ(skyZ);
 		player.setPos(x, y, z);
 		player.xo = x; player.yo = y; player.zo = z;
-		mc.prevX = mc.curX = mc.x = x;
+		mc.prevX = mc.curX = mc.x = skyX;
 		mc.prevY = mc.curY = mc.y = y;
-		mc.prevZ = mc.curZ = mc.z = z;
+		mc.prevZ = mc.curZ = mc.z = skyZ;
 		mc.tickQpc = 0;
 		player.setDeltaMovement(Vec3.ZERO);
 		player.resetFallDistance();
@@ -380,10 +394,12 @@ public final class SkyClient {
 		Minecraft minecraft = Minecraft.getInstance();
 		LocalPlayer player = minecraft.player;
 		int flags = 0;
-		boolean initialized = publication.observe(player, sky.teleportSeq) && !teleportPending && ActorSyncClient.compatible();
+		SkyOrigin.Origin origin = SkyOrigin.of(sky.worldId);
+		boolean initialized = publication.observe(player, sky.teleportSeq) && !teleportPending && origin != null && ActorSyncClient.compatible();
 		if (player != null && minecraft.level != null && initialized) {
 			float partial = minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(false);
-			Vec3 feet = player.getPosition(partial);
+			// Skyrim gets everything in its own world's coordinates.
+			Vec3 feet = toSkyrim(origin, player.getPosition(partial));
 			Camera camera = minecraft.gameRenderer.mainCamera();
 			flags |= Proto.MC_IN_WORLD;
 			if (player.onGround()) {
@@ -411,7 +427,7 @@ public final class SkyClient {
 			mc.yaw = player.getYRot();
 			mc.pitch = player.getXRot();
 			// The eye, not the camera: in third person Minecraft's camera sits behind or in front.
-			Vec3 eye = camera.isDetached() ? player.getEyePosition(partial) : camera.position();
+			Vec3 eye = toSkyrim(origin, camera.isDetached() ? player.getEyePosition(partial) : camera.position());
 			mc.eyeHeight = (float) (eye.y - feet.y);
 			mc.eyeX = eye.x;
 			mc.eyeY = eye.y;

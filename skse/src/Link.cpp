@@ -105,6 +105,7 @@ namespace skycraft
 		std::memset(base_ + proto::kOffActorTable, 0, sizeof(proto::ActorTable));
 		std::memset(base_ + proto::kOffEventRing, 0, proto::kEventRingDataOff);
 		std::memset(base_ + proto::kOffWorldEntities, 0, sizeof(proto::WorldEntities));
+		std::memset(base_ + proto::kOffWorldInfo, 0, sizeof(proto::WorldInfo));
 		std::memset(base_ + proto::kOffRenderRing, 0, proto::kRenRingDataOff);
 		header->version = proto::kVersion;
 		header->skyrimPid = ::GetCurrentProcessId();
@@ -189,6 +190,21 @@ namespace skycraft
 		seq.store(s + 1, std::memory_order_relaxed);
 		std::atomic_thread_fence(std::memory_order_release);
 		std::memcpy(reinterpret_cast<std::uint8_t*>(dst) + 4, reinterpret_cast<const std::uint8_t*>(&a_grid) + 4, sizeof(proto::WaterGrid) - 4);
+		seq.store(s + 2, std::memory_order_release);
+	}
+
+	void Link::WriteWorldInfo(const proto::WorldInfo& a_info)
+	{
+		if (!base_) {
+			return;
+		}
+		world_ = a_info.worldId;
+		auto* dst = At<proto::WorldInfo>(proto::kOffWorldInfo);
+		auto  seq = Atomic(dst->seq);
+		const auto s = seq.load(std::memory_order_relaxed);
+		seq.store(s + 1, std::memory_order_relaxed);
+		std::atomic_thread_fence(std::memory_order_release);
+		std::memcpy(reinterpret_cast<std::uint8_t*>(dst) + 4, reinterpret_cast<const std::uint8_t*>(&a_info) + 4, sizeof(proto::WorldInfo) - 4);
 		seq.store(s + 2, std::memory_order_release);
 	}
 
@@ -278,6 +294,7 @@ namespace skycraft
 		std::atomic_thread_fence(std::memory_order_release);
 		const auto count = std::min(a_count, proto::kMaxActors);
 		table->count = count;
+		table->worldId = world_;
 		if (count) {
 			std::memcpy(table->actors, a_records, sizeof(proto::ActorRecord) * count);
 		}

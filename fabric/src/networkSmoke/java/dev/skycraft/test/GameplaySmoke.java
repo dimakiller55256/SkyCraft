@@ -27,7 +27,7 @@ import java.util.UUID;
 final class GameplaySmoke {
     private final boolean host="host".equals(System.getProperty("skycraft.gameplaySmokeRole"));
     private final long deadline=System.nanoTime()+240_000_000_000L;
-    private int step,ticks,port; private boolean done; private BlockPos dug;
+    private int step,ticks,port; private boolean done,menuChecked; private BlockPos dug; private net.minecraft.world.phys.Vec3 jumpFrom;
     private Path peer;
     private volatile int combatStep,combatAt;
     private volatile String combatResult;
@@ -68,9 +68,22 @@ final class GameplaySmoke {
                 }
                 case 3 -> {
                     if(++ticks<15)return;
-                    net.minecraft.client.Screenshot.grab(mc.gameDirectory,"gameplay-network-menu.png",mc.gameRenderer.mainRenderTarget(),1,c->{});
-                    mc.gui.setScreen(null);
-                    inputCheck(mc);
+                    if(!menuChecked){
+                        net.minecraft.client.Screenshot.grab(mc.gameDirectory,"gameplay-network-menu.png",mc.gameRenderer.mainRenderTarget(),1,c->{});
+                        mc.gui.setScreen(null);
+                        inputCheck(mc);
+                        menuChecked=true;
+                        if(steamLink()||steamHost()){mc.gui.setScreen(new dev.skycraft.client.SteamMenu(null));press(mc,"Открыть свой мир друзьям в Steam");}
+                    }
+                    // Through SkyCraft Link the guest waits until our link says the world is open to friends.
+                    if((steamLink()||steamHost())&&!(dev.skycraft.client.SteamLink.running()&&dev.skycraft.client.SteamLink.status().startsWith("Мир открыт")))return;
+                    if(steamHost()){
+                        try(var unpacked=Files.list(mc.gameDirectory.toPath().resolve("skycraft/link"))){
+                            if(unpacked.noneMatch(p->p.getFileName().toString().matches("SkyCraftLink-[0-9a-f]{16}\\.exe")))throw new IllegalStateException("SkyCraft Link not unpacked from the mod");
+                        }
+                        finish(mc,"PASS: Steam menu opened a friends-only Spacewar lobby through the SkyCraft Link unpacked from the mod");return;
+                    }
+                    if(steamLink())mc.gui.setScreen(null);
                     Files.writeString(mc.gameDirectory.toPath().resolve("port.txt"),Integer.toString(port));step=4;
                 }
                 case 4 -> {
@@ -147,12 +160,25 @@ final class GameplaySmoke {
             }
         }catch(Exception e){dev.skycraft.SkyCraft.LOG.error("Gameplay smoke failed",e);finish(mc,"FAIL: "+e);}
     }
+    /** Both clients run SkyCraft Link from the Steam menu (over its loopback link) instead of joining the LAN port. */
+    private static boolean steamLink(){return "steamlink".equals(System.getProperty("skycraft.gameplayJoin"));}
+    /** Real Steam on the owner's one account: only the host's side, with the program unpacked from the mod. */
+    private static boolean steamHost(){return "steamhost".equals(System.getProperty("skycraft.gameplayJoin"));}
     private void guest(Minecraft mc)throws Exception {
         if(step==0){
             if(!(mc.gui.screen() instanceof TitleScreen title)||!Files.exists(peer.resolve("port.txt")))return;
-            NetworkClient.connect(mc,title,dev.skycraft.network.Endpoint.parse("127.0.0.1:"+Files.readString(peer.resolve("port.txt"))));step=1;
+            if(!steamLink()){NetworkClient.connect(mc,title,dev.skycraft.network.Endpoint.parse("127.0.0.1:"+Files.readString(peer.resolve("port.txt"))));step=1;return;}
+            if(dev.skycraft.client.SteamLink.role()!=dev.skycraft.client.SteamLink.Role.GUEST){dev.skycraft.client.SteamLink.join(mc,"auto");return;}
+            if(dev.skycraft.client.SteamLink.joinedAddress()==null)return;
+            // As Skyrim's frames would: MirrorWorld joins the address the link handed it.
+            dev.skycraft.client.MirrorWorld.openWhenReady(mc);
+            if(NetworkClient.activeAttempt()!=0)step=1;
         }else if(step==1){
             if(mc.player==null||mc.level==null||mc.isLocalServer())return;
+            // A guest walking through a Skyrim door lands in another square of the map, as far as this.
+            if(jumpFrom==null){jumpFrom=mc.player.position();ticks=0;mc.player.setPos(jumpFrom.x+16384,jumpFrom.y,jumpFrom.z+16384);return;}
+            if(++ticks==40)mc.player.setPos(jumpFrom.x,jumpFrom.y,jumpFrom.z);
+            if(ticks<80)return;
             dug=mc.player.blockPosition().offset(1,0,0);
             ClientPlayNetworking.send(new SkyNet.DigOpen(0x3c,dug,dev.skycraft.link.Proto.DIG_STONE));
             Files.writeString(mc.gameDirectory.toPath().resolve("dug.txt"),dug.getX()+","+dug.getY()+","+dug.getZ());step=2;
@@ -164,7 +190,8 @@ final class GameplaySmoke {
             mc.disconnectWithSavingScreen();mc.gui.setScreen(new TitleScreen());ticks=0;step=3;
         }else if(step==3){
             if(++ticks<20)return;
-            NetworkClient.connect(mc,new TitleScreen(),dev.skycraft.network.Endpoint.parse("127.0.0.1:"+Files.readString(peer.resolve("port.txt"))));step=4;
+            String address=steamLink()?dev.skycraft.client.SteamLink.joinedAddress():"127.0.0.1:"+Files.readString(peer.resolve("port.txt"));
+            NetworkClient.connect(mc,new TitleScreen(),dev.skycraft.network.Endpoint.parse(address));step=4;
         }else if(step==4){
             if(mc.level==null||mc.player==null||mc.isLocalServer())return;
             if(mc.gui.screen()!=null)return; // A player/chunk exists before the join loading screen closes.
@@ -198,10 +225,14 @@ final class GameplaySmoke {
         var clear=store.getDeclaredMethod("clear",int.class);clear.setAccessible(true);
         var tris=store.getDeclaredMethod("readTris",java.lang.foreign.MemorySegment.class,long.class);tris.setAccessible(true);
         var voxels=store.getDeclaredMethod("readRegion",java.lang.foreign.MemorySegment.class,long.class);voxels.setAccessible(true);
+        // Geometry is kept at its world's square of the map: this check's world is Tamriel's, the middle.
+        var stored=store.getDeclaredField("stored");stored.setAccessible(true);
+        Object held=stored.get(null);
         var sky=dev.skycraft.client.SkyClient.sky();int flags=sky.flags;
         double distance=mc.player.fallDistance;
         try(var arena=java.lang.foreign.Arena.ofConfined()) {
             clear.invoke(null,991);sky.flags=dev.skycraft.link.Proto.SKY_IN_GAME;
+            stored.set(null,new dev.skycraft.world.SkyOrigin.Origin(0x3c,0,0));
             var move=new net.minecraft.world.phys.Vec3(.1,-.0784,0);
             if(!dev.skycraft.client.SkyCollider.collide(mc.player,move).equals(net.minecraft.world.phys.Vec3.ZERO))throw new IllegalStateException("Unknown geometry allowed player to fall");
             int rx=(int)Math.floor(mc.player.getX()/8),ry=(int)Math.floor(mc.player.getY()/8),rz=(int)Math.floor(mc.player.getZ()/8);
@@ -228,7 +259,7 @@ final class GameplaySmoke {
             sky.flags|=dev.skycraft.link.Proto.SKY_TAKEOVER;
             if(!dev.skycraft.client.SkyCollider.collide(mc.player,move).equals(net.minecraft.world.phys.Vec3.ZERO))throw new IllegalStateException("Minecraft moved during Skyrim takeover");
             Files.writeString(mc.gameDirectory.toPath().resolve("collision-check.txt"),"PASS: actual collider holds unknown geometry; known empty permits falling; late terrain lifts feet; Skyrim takeover freezes Minecraft");
-        }finally{sky.flags=flags;mc.player.fallDistance=distance;clear.invoke(null,-1);}
+        }finally{sky.flags=flags;mc.player.fallDistance=distance;clear.invoke(null,-1);stored.set(null,held);}
     }
     private static void press(Minecraft mc,String label){((Button)Screens.getWidgets(mc.gui.screen()).stream().filter(w->w instanceof Button&&w.getMessage().getString().equals(label)).findFirst().orElseThrow()).onPress(new KeyEvent(257,0,0));}
     private void finish(Minecraft mc,String result){

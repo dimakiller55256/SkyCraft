@@ -42,7 +42,7 @@ def build(output, native_dll=None):
     properties=(ROOT/'fabric/gradle.properties').read_text()
     version=re.search(r'^version=(.+)$',properties,re.M).group(1).strip()
     if not re.fullmatch(r'[A-Za-z0-9._-]+',version): raise ValueError('Invalid version')
-    if version in ('0.1.2-ys.network.8','0.1.2-ys.network.9','0.1.2-ys.network.10','0.1.2-ys.network.11') and native_dll is None:raise ValueError('This protocol requires the built native DLL; pass --native-dll')
+    if version in ('0.1.2-ys.network.8','0.1.2-ys.network.9','0.1.2-ys.network.10','0.1.2-ys.network.11','0.1.2-ys.coop.1') and native_dll is None:raise ValueError('This protocol requires the built native DLL; pass --native-dll')
     upstream=ROOT/'.tools/friend-package/cache/SkyCraft-0.1.2.zip'
     data=upstream.read_bytes()
     if sha(data)!=UPSTREAM_SHA256: raise ValueError('Official upstream ZIP checksum mismatch')

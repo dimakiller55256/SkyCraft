@@ -102,12 +102,52 @@ if (providers.gradleProperty("networkSmoke").isPresent()) {
 	}
 }
 
+// Opt-in: two plain SkyCraft clients for tools/world-squares-smoke.py, each linked to its own
+// Skyrim stand-in (never the installed Skyrim's mapping) in isolated .tools/squares-* folders.
+if (providers.gradleProperty('squaresSmoke').isPresent()) {
+	loom.runs {
+		squaresHostClient {
+			client()
+			runDirectory = '../.tools/squares-host'
+			vmArgs '-Xmx768m', '-XX:ActiveProcessorCount=2', '--enable-native-access=ALL-UNNAMED', '-Dskycraft.startHidden=true', '-Dskycraft.quitWithSkyrim=false', '-Dskycraft.discordAppId=0', '-Dskycraft.link=Local\\SkyCraft_squares_host'
+			programArgs '--username', 'SquaresHost'
+		}
+		squaresGuestClient {
+			client()
+			runDirectory = '../.tools/squares-guest'
+			vmArgs '-Xmx768m', '-XX:ActiveProcessorCount=2', '--enable-native-access=ALL-UNNAMED', '-Dskycraft.startHidden=true', '-Dskycraft.quitWithSkyrim=false', '-Dskycraft.discordAppId=0', '-Dskycraft.link=Local\\SkyCraft_squares_guest'
+			programArgs '--username', 'SquaresGuest'
+		}
+	}
+	tasks.register('exportSquaresLaunch') {
+		def exports = [tasks.named('runSquaresHostClient'), tasks.named('runSquaresGuestClient')]
+		dependsOn exports.collectMany { it.get().taskDependencies.getDependencies(it.get()) }
+		doLast { exports.each { provider ->
+			def run = provider.get(); def jvm = run.allJvmArgs.findAll { !it.startsWith('@') }
+			def launchArgs = jvm + ['-classpath', run.classpath.asPath, run.mainClass.get()] + run.args
+			def argsFile = file("../.tools/${run.name}.args")
+			argsFile.text = launchArgs.collect { '"' + it.replace('\\', '\\\\').replace('"', '\\"') + '"' }.join('\n')
+			file("../.tools/${run.name}.json").text = groovy.json.JsonOutput.toJson([java: run.javaLauncher.get().executablePath.asFile.absolutePath,
+				args: ['@' + argsFile.absolutePath],
+				workingDirectory: file('../.tools/squares-' + (run.name.contains('Host') ? 'host' : 'guest')).absolutePath])
+		} }
+	}
+}
+
 processResources {
 	def version = project.version
 	inputs.property "version", version
 
 	filesMatching("fabric.mod.json") {
 		expand "version": version
+	}
+	// SkyCraft Link (../link, built by tools/dev.ps1 -Action BuildLink) ships inside the mod when it
+	// has been built; without it the Steam menu says it's missing. -PlinkExe=<path> picks another.
+	def linkExe = file(providers.gradleProperty("linkExe").getOrElse("../.tools/link-build/Release/SkyCraftLink.exe"))
+	from(linkExe.parentFile) {
+		include linkExe.name
+		rename { "SkyCraftLink.exe" }
+		into "skycraft"
 	}
 }
 

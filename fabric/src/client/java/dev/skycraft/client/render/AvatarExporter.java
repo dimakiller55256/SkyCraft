@@ -324,7 +324,9 @@ final class AvatarExporter implements SubmitNodeCollector {
 		}
 		this.capture.flush();
 		this.offX = this.offY = this.offZ = 0.0F;
-		this.send(Proto.REN_SCENE, origin);
+		// Positions are relative to origin; Skyrim places origin in its own world's coordinates.
+		var square = WorldExporter.origin();
+		this.send(Proto.REN_SCENE, new double[] { square.toSkyrimX(origin[0]), origin[1], square.toSkyrimZ(origin[2]) });
 	}
 
 	/**

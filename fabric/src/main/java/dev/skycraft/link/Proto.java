@@ -8,7 +8,7 @@ public final class Proto {
 	}
 
 	public static final int MAGIC = 0x43594B53;
-	public static final int VERSION = 12;
+	public static final int VERSION = 13;
 	// A second client on the same PC (multiplayer testing) talks to its own stand-in Skyrim:
 	// -Dskycraft.link=Local\SkyCraft_guest (see tools/fake_guest.py).
 	public static final String MAPPING_NAME = System.getProperty("skycraft.link", "Local\\SkyCraft_v1");
@@ -35,6 +35,10 @@ public final class Proto {
 	public static final long OFF_ACTOR_TABLE = 0x12000;
 	public static final long OFF_EVENT_RING = 0x17000;
 	public static final long OFF_WORLD_ENTITIES = 0x1C000;
+	// World identity (WorldInfo): seq, worldId, localId, plugin[52]
+	public static final long OFF_WORLD_INFO = 0x1FFC0;
+	public static final long WI_SEQ = 0x0, WI_WORLD_ID = 0x4, WI_LOCAL_ID = 0x8, WI_PLUGIN = 0xC;
+	public static final int WI_PLUGIN_BYTES = 52;
 	public static final long OFF_RENDER_RING = OFF_OVERLAY_PIXELS + OVERLAY_SLOT_BYTES * OVERLAY_SLOTS;
 	public static final long RENDER_RING_BYTES = 64L << 20;
 	public static final long MAPPING_BYTES = OFF_RENDER_RING + RENDER_RING_BYTES;
@@ -53,6 +57,7 @@ public final class Proto {
 	public static final int MAX_ACTORS = 256;
 	public static final long AT_SEQ = 0x00;
 	public static final long AT_COUNT = 0x04;
+	public static final long AT_WORLD_ID = 0x08;
 	public static final long AT_RECORDS = 0x40;
 	public static final long ACTOR_RECORD_BYTES = 64;
 	public static final int ACTOR_HOSTILE = 1;
@@ -103,6 +108,7 @@ public final class Proto {
 	public static final int WE_BLOCK = 4;
 	public static final int WE_CRACK = 5;
 	public static final int WE_SHADOW = 6;
+	public static final int WE_REMOTE_PLAYER = 7;
 
 	// Render ring (relative to OFF_RENDER_RING)
 	public static final long RR_HEAD = 0x00;
@@ -152,6 +158,7 @@ public final class Proto {
 	public static final int SKY_MENU_OPEN = 1 << 1;
 	public static final int SKY_LOADING = 1 << 2;
 	public static final int SKY_TAKEOVER = 1 << 3;
+	public static final int SKY_STR_SESSION = 1 << 4;
 
 	// McState (relative to OFF_MC_STATE)
 	public static final long MS_SEQ = 0x00;

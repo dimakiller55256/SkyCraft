@@ -23,19 +23,36 @@ public final class SkyTri {
 
 	/** {@code flags}: the triangle's Proto.TRI_* flags as Skyrim sent them. */
 	public SkyTri(float[] v, int o, int flags) {
+		this(v, o, flags, 0.0, 0.0);
+	}
+
+	/** The same, moved by ({@code dx}, 0, {@code dz}) blocks: Skyrim's world coordinates into its square of the map. */
+	public SkyTri(float[] v, int o, int flags, double dx, double dz) {
+		this(v[o] + dx, v[o + 1], v[o + 2] + dz, v[o + 3] + dx, v[o + 4], v[o + 5] + dz, v[o + 6] + dx, v[o + 7], v[o + 8] + dz, flags);
+	}
+
+	/** This triangle moved by ({@code dx}, 0, {@code dz}) blocks. */
+	public SkyTri shifted(double dx, double dz) {
+		return new SkyTri(this.ax + dx, this.ay, this.az + dz, this.bx + dx, this.by, this.bz + dz, this.cx + dx, this.cy, this.cz + dz, this.flags);
+	}
+
+	private final int flags;
+
+	private SkyTri(double ax, double ay, double az, double bx, double by, double bz, double cx, double cy, double cz, int flags) {
+		this.flags = flags;
 		boolean stairHelper = (flags & dev.skycraft.link.Proto.TRI_STAIR_HELPER) != 0;
 		this.diggable = (flags & dev.skycraft.link.Proto.TRI_DIGGABLE) != 0;
 		this.material = (flags >>> dev.skycraft.link.Proto.TRI_MATERIAL_SHIFT) & 0xFF;
 		this.terrain = (flags & dev.skycraft.link.Proto.TRI_TERRAIN) != 0;
-		this.ax = v[o];
-		this.ay = v[o + 1];
-		this.az = v[o + 2];
-		this.bx = v[o + 3];
-		this.by = v[o + 4];
-		this.bz = v[o + 5];
-		this.cx = v[o + 6];
-		this.cy = v[o + 7];
-		this.cz = v[o + 8];
+		this.ax = ax;
+		this.ay = ay;
+		this.az = az;
+		this.bx = bx;
+		this.by = by;
+		this.bz = bz;
+		this.cx = cx;
+		this.cy = cy;
+		this.cz = cz;
 		double ux = this.bx - this.ax, uy = this.by - this.ay, uz = this.bz - this.az;
 		double wx = this.cx - this.ax, wy = this.cy - this.ay, wz = this.cz - this.az;
 		double qx = uy * wz - uz * wy, qy = uz * wx - ux * wz, qz = ux * wy - uy * wx;

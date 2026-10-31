@@ -35,6 +35,9 @@ namespace skycraft
 		bool  essentialSet = false;
 		bool  essentialOriginal = false;
 		bool  healthPrimed = false;
+		// The Minecraft player died with STR running: the damage that sends the Skyrim player into
+		// STR's bleedout must not be refunded (KillPlayer).
+		bool  strDeathBlow = false;
 		float diagTimer = 5.0f;
 		bool  engaged = false;
 		float engagedTimer = 0.0f;
@@ -101,7 +104,7 @@ namespace skycraft
 				// On this AE runtime health is already subtracted on entry; this vfunc checks
 				// remaining health and starts death/essential bleedout. Refund BEFORE that check,
 				// not next frame. Forward the actual deficit once, not raw damage plus deficit.
-				const bool owned = State().mcInWorld && Link::Get().McAlive() && !a_this->IsDead();
+				const bool owned = State().mcInWorld && Link::Get().McAlive() && !a_this->IsDead() && !strDeathBlow;
 				auto* av=a_this->AsActorValueOwner();
 				const float deficit=owned ? a_this->GetActorValueMax(RE::ActorValue::kHealth)-av->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
 				if (owned && std::isfinite(deficit) && deficit > 0.01f && capturedDamage.size() < 64) {
@@ -218,6 +221,11 @@ namespace skycraft
 				}
 				const auto pos = actor->GetPosition();
 				if (pos.GetDistance(playerPos) > kActorRange) {
+					continue;
+				}
+				// Another player (STR's stand-in): no Minecraft target. STR doesn't let players hurt
+				// each other anyway, and their own Minecraft body is the one in the shared world.
+				if (Coop::IsStrRemotePlayer(actor)) {
 					continue;
 				}
 				proto::ActorRecord r{};
@@ -487,6 +495,22 @@ namespace skycraft
 			if (a_player->IsDead()) {
 				return;
 			}
+			if (Coop::StrLoaded()) {
+				// STR keeps the player essential and respawns them a few seconds into bleedout
+				// (PlayerService::RunRespawnUpdates). Killing them outright would end the session in
+				// Skyrim's death reload, so take their health through the damage STR syncs instead.
+				if (a_player->AsActorState()->IsBleedingOut()) {
+					return;
+				}
+				auto*       killer = a_ev.formId ? RE::TESForm::LookupByID<RE::Actor>(a_ev.formId) : nullptr;
+				const float health = a_player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
+				logger::info("Minecraft player died (killer {:08X}); the Skyrim player goes down for STR's respawn", a_ev.formId);
+				SetEssential(a_player, true);
+				strDeathBlow = true;
+				a_player->DoDamage(std::max(health, 1.0f) + 1.0f, killer, true);
+				strDeathBlow = false;
+				return;
+			}
 			logger::info("Minecraft player died (killer {:08X}); killing the Skyrim player", a_ev.formId);
 			SetEssential(a_player, false);
 			auto* killer = a_ev.formId ? RE::TESForm::LookupByID<RE::Actor>(a_ev.formId) : nullptr;
@@ -665,8 +689,9 @@ namespace skycraft
 			for (auto& handle : lists->highActorHandles) {
 				auto actorPtr = handle.get();
 				auto* actor = actorPtr.get();
-				if (!actor || actor == a_player || actor->IsDead() || !actor->Is3DLoaded() || actor->GetPosition().GetDistance(playerPos) > kActorRange) {
-					continue;
+				if (!actor || actor == a_player || actor->IsDead() || !actor->Is3DLoaded() || actor->GetPosition().GetDistance(playerPos) > kActorRange ||
+					Coop::IsStrRemotePlayer(actor)) {
+					continue;  // another player's own Skyrim burns them
 				}
 				const auto hazard = HazardAtActor(actor);
 				auto       it = burning.find(actor->GetFormID());
@@ -871,6 +896,9 @@ namespace skycraft
 					continue;
 				}
 				if (auto* actor = ref->As<RE::Actor>()) {
+					if (Coop::IsStrRemotePlayer(actor)) {
+						continue;  // the blast reaches that player through their own Minecraft
+					}
 					if (!actor->IsDead()) {
 						if (auto* process = actor->GetActorRuntimeData().currentProcess) {
 							process->KnockExplosion(actor, a_blast.center, 25.0f * falloff * power);
@@ -930,15 +958,42 @@ namespace skycraft
 			logger::info("combat hooks installed");
 		}
 
+		// Amnesia: an essential NPC beaten to its knees forgets the fight. Skyrim won't let it die, so
+		// without this it would get up and resume forever, and the whole town with it.
+		void ForgetKnockouts(RE::PlayerCharacter* a_player)
+		{
+			auto* lists = RE::ProcessLists::GetSingleton();
+			if (!lists) {
+				return;
+			}
+			for (auto& handle : lists->highActorHandles) {
+				auto actor = handle.get();
+				if (!actor || actor->IsDead() || !actor->IsEssential() || !actor->AsActorState()->IsBleedingOut() || !actor->IsInCombat()) {
+					continue;
+				}
+				actor->StopCombat();
+				lists->StopCombatAndAlarmOnActor(a_player, false);
+				if (auto* faction = actor->GetCrimeFaction()) {
+					a_player->ClearAllCrimeGold(faction);
+				}
+				logger::info("amnesia: {} forgot the fight", actor->GetName());
+			}
+		}
+
 		void PerFrame(RE::PlayerCharacter* a_player, bool a_puppeting, float a_delta)
 		{
 			auto& link = Link::Get();
+			if (link.McAlive()) {
+				ForgetKnockouts(a_player);
+			}
 			if (!a_puppeting) {
 				// Knockdown temporarily hands animation/physics to Skyrim. It must not revoke
 				// Minecraft's health ownership or drop the essential guard during that transition.
 				const bool protect = link.McAlive() && State().mcInWorld && !a_player->IsDead();
-				SetEssential(a_player, protect);
-				if (protect) BridgePlayerDamage(a_player, a_delta);
+				// STR's bleedout keeps health at 0 until its respawn: nothing there is a new hit.
+				const bool strDown = Coop::StrLoaded() && a_player->AsActorState()->IsBleedingOut();
+				SetEssential(a_player, protect || strDown);
+				if (protect && !strDown) BridgePlayerDamage(a_player, a_delta);
 				else { healthPrimed = false; capturedDamage.clear(); }
 				engaged = false;
 				// Still drain Minecraft's events so stale hits don't land when control resumes.

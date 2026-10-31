@@ -71,6 +71,11 @@ public abstract class ServerExplosionMixin {
 		}
 		ServerExplosion self = (ServerExplosion) (Object) this;
 		var center = self.center();
-		SkyLink.pushEvent(Proto.EV_EXPLOSION, 0, (float) center.x, (float) center.y, (float) center.z, self.radius(), 0);
+		// Only a blast in this Skyrim's world reaches it, in that world's coordinates.
+		var origin = dev.skycraft.world.SkyOrigin.current();
+		if (origin == null || !origin.contains(center.x, center.z)) {
+			return;
+		}
+		SkyLink.pushEvent(Proto.EV_EXPLOSION, 0, (float) origin.toSkyrimX(center.x), (float) center.y, (float) origin.toSkyrimZ(center.z), self.radius(), 0);
 	}
 }

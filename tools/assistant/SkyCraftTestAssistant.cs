@@ -147,7 +147,7 @@ namespace SkyCraftTests {
         }
     }
     static class Assessment {
-        public static bool SessionMatches(Dictionary<string,object> peer,string runId) {return Data.Str(peer,"runId")==runId && Data.Str(peer,"version")=="0.1.2-ys.network.11";}
+        public static bool SessionMatches(Dictionary<string,object> peer,string runId) {return Data.Str(peer,"runId")==runId && Data.Str(peer,"version")=="0.1.2-ys.coop.3";}
         public static double Distance(Dictionary<string,object> a,Dictionary<string,object> b) {
             double x=Convert.ToDouble(a["x"])-Convert.ToDouble(b["x"]),y=Convert.ToDouble(a["y"])-Convert.ToDouble(b["y"]),z=Convert.ToDouble(a["z"])-Convert.ToDouble(b["z"]);
             return Math.Sqrt(x*x+y*y+z*z);
@@ -155,13 +155,13 @@ namespace SkyCraftTests {
     }
     sealed class Invitation {
         public string RunId; public List<Dictionary<string,object>> Addresses; public DateTime Expires; public string Authentication="ONLINE";
-        public string Encode() { return "SCY2:"+Convert.ToBase64String(Encoding.UTF8.GetBytes(Data.Json(Data.Obj("schema",2,"version","0.1.2-ys.network.11","runId",RunId,"expiresUtc",Expires.ToString("o"),"addresses",Addresses,"authentication",Authentication)))); }
+        public string Encode() { return "SCY2:"+Convert.ToBase64String(Encoding.UTF8.GetBytes(Data.Json(Data.Obj("schema",2,"version","0.1.2-ys.coop.3","runId",RunId,"expiresUtc",Expires.ToString("o"),"addresses",Addresses,"authentication",Authentication)))); }
         public static Invitation Decode(string text) {
             if(text.Length>12000 || !text.StartsWith("SCY2:")) throw new ArgumentException("Вставьте весь код хоста, начиная с SCY2:.");
             var d=Data.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(text.Substring(5).Trim())));
             string id=Data.Str(d,"runId");
             DateTime expiry=DateTime.Parse(Data.Str(d,"expiresUtc")).ToUniversalTime();
-            if(Data.Int(d,"schema")!=2 || Data.Str(d,"version")!="0.1.2-ys.network.11" || !Regex.IsMatch(id,"^[A-Za-z0-9_-]{1,64}$") || expiry<DateTime.UtcNow || expiry>DateTime.UtcNow.AddMinutes(31)) throw new ArgumentException("Код повреждён или устарел. Попросите новый код хоста.");
+            if(Data.Int(d,"schema")!=2 || Data.Str(d,"version")!="0.1.2-ys.coop.3" || !Regex.IsMatch(id,"^[A-Za-z0-9_-]{1,64}$") || expiry<DateTime.UtcNow || expiry>DateTime.UtcNow.AddMinutes(31)) throw new ArgumentException("Код повреждён или устарел. Попросите новый код хоста.");
             string authentication=Data.Str(d,"authentication");
             if(authentication!="ONLINE" && authentication!="OFFLINE") throw new ArgumentException("В коде нет корректного режима входа. Попросите новый код хоста.");
             var rows=new List<Dictionary<string,object>>();
@@ -361,7 +361,7 @@ namespace SkyCraftTests {
             try {
                 gamePath=Path.GetFullPath(game.Text.Trim().Trim('"'));
                 if(!Discovery.ValidGame(gamePath)) throw new ArgumentException("Не найдена папка Minecraft со SkyCraft JAR. В Prism: экземпляр → Папка Minecraft.");
-                if(Discovery.SkyVersion(gamePath)!="0.1.2-ys.network.11") throw new IOException("Для помощника нужен SkyCraft network.11. Закройте Skyrim и Minecraft, нажмите «Обновить мод», затем запустите игру снова.");
+                if(Discovery.SkyVersion(gamePath)!="0.1.2-ys.coop.3") throw new IOException("Для помощника нужен SkyCraft coop.1. Закройте Skyrim и Minecraft, нажмите «Обновить мод», затем запустите игру снова.");
                 skyrimPath=skyrim.Text.Trim().Trim('"'); modsPath=Directory.Exists(mods.Text.Trim())?Path.GetFullPath(mods.Text.Trim()):"NOT_FOUND";
                 roleName=role.SelectedIndex==0?"host":"client"; networkKind=network.SelectedIndex; networkLabel=role.SelectedIndex==2?"Loopback":networkKind>0?"LAN":"Internet";
                 selectedMode=mode.SelectedIndex==0?"CURRENT":Convert.ToString(mode.SelectedItem); proxyText=proxy.Text.Trim();
@@ -587,7 +587,7 @@ namespace SkyCraftTests {
                     missing=state.Count==0||!Data.Bool(state,"skyrimLinked")?missing+1:0;
                     if(missing>=8)throw new IOException("Связь с Skyrim отсутствует 8 секунд. Игровые логи и свежий дамп будут собраны автоматически.");
                     status.Text=Data.Str(state,"world")=="remote" && !Data.Bool(state,"worldCompatible")
-                        ? "Локации Skyrim отличаются: хост "+Data.Str(state,"hostSkyrimWorldId")+", клиент "+Data.Str(state,"skyrimWorldId")+". Перейдите в одну локацию; запись продолжается."
+                        ? "Сервер ещё не разместил локацию Skyrim "+Data.Str(state,"skyrimWorldId")+" на карте Minecraft; управление вернётся само. Запись продолжается."
                         : "Игровая проверка: "+(int)watch.Elapsed.TotalSeconds+" с; игроков "+Data.Int(state,"players")+". Оба помощника оставьте включёнными до конца всех проверок.";
                     await Task.Delay(1000,token);
                 }
@@ -696,7 +696,7 @@ namespace SkyCraftTests {
                 if(Assessment.Distance(away,atOrigin)<380 || Assessment.Distance(atOrigin,atOrigin)!=0)throw new Exception("Position reset classification");checks.Add("POSITION_RESET_DETECTED_LEGITIMATE_ORIGIN_ALLOWED PASS");
                 var packet=Data.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(copy.Encode().Substring(5))));packet["version"]="0.1.2-ys.network.3";
                 rejected=false;try{Invitation.Decode("SCY2:"+Convert.ToBase64String(Encoding.UTF8.GetBytes(Data.Json(packet))));}catch{rejected=true;}if(!rejected)throw new Exception("Old version invite");checks.Add("OLD_VERSION_INVITATION_REJECTED PASS");
-                if(!Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.11"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","OLD","version","0.1.2-ys.network.11"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.3"),"TEST"))throw new Exception("Peer session matching");checks.Add("PEER_SESSION_AND_VERSION_MATCHING PASS");
+                if(!Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.coop.3"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","OLD","version","0.1.2-ys.coop.3"),"TEST") || Assessment.SessionMatches(Data.Obj("runId","TEST","version","0.1.2-ys.network.3"),"TEST"))throw new Exception("Peer session matching");checks.Add("PEER_SESSION_AND_VERSION_MATCHING PASS");
                 // Creating a WinForms control installs a UI SynchronizationContext. Run this
                 // last, after IPC awaits; a self-test has no message loop to service that context.
                 HelperForm.RatingsSelfTest(folder);checks.Add("POST_STOP_RATINGS_UPDATE_ZIP_AND_CORRECTION PASS");

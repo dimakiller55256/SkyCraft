@@ -13,7 +13,7 @@
 namespace skycraft::proto
 {
 	inline constexpr std::uint32_t kMagic = 0x43594B53;  // "SKYC"
-	inline constexpr std::uint32_t kVersion = 12;
+	inline constexpr std::uint32_t kVersion = 13;
 	inline constexpr wchar_t       kMappingName[] = L"Local\\SkyCraft_v1";
 
 	// 1 Minecraft block == 70 Skyrim units (Skyrim player ~128 units tall, MC player 1.8 blocks).
@@ -79,6 +79,8 @@ namespace skycraft::proto
 		kSkyMenuOpen = 1u << 1,  // a Skyrim menu owns input; MC should drop held keys
 		kSkyLoading = 1u << 2,   // loading screen / cell transition in progress
 		kSkyTakeover = 1u << 3,  // Skyrim owns animation/physics (ragdoll, furniture, scene)
+		kSkyStrSession = 1u << 4,  // Skyrim runs inside Skyrim Together Reborn: its death system respawns
+		                           // the player, so Minecraft respawns its own player too
 	};
 
 	// Skyrim's water (lakes, rivers, the sea) around the player, for Minecraft to treat as its own
@@ -248,7 +250,8 @@ namespace skycraft::proto
 	{
 		std::uint32_t seq;
 		std::uint32_t count;
-		std::uint8_t  pad[0x40 - 8];
+		std::uint32_t worldId;  // the world (SkyState::worldId) these positions are in
+		std::uint8_t  pad[0x40 - 12];
 		ActorRecord   actors[kMaxActors];
 	};
 	static_assert(sizeof(ActorTable) == 0x40 + 64 * kMaxActors);
@@ -313,6 +316,8 @@ namespace skycraft::proto
 		kWeBlock = 4,    // dropped block item: a spinning cube of side `scale`, uv[0..2] = side, top, bottom
 		kWeCrack = 5,    // block-breaking cracks over the box at (x, y, z) of size ext, uv[0] = crack stage
 		kWeShadow = 6,   // a player's or mob's feet at (x, y, z), `scale` wide: its soft contact shadow
+		kWeRemotePlayer = 7,  // another Minecraft player's feet at (x, y, z), facing yaw: not drawn from
+		                      // this entry (its body comes in kRenScene); Skyrim hides STR's stand-in there
 	};
 
 	struct WorldEntity
@@ -339,6 +344,24 @@ namespace skycraft::proto
 	};
 	static_assert(sizeof(WorldEntities) == 0x40 + sizeof(WorldEntity) * kMaxWorldEntities);
 	static_assert(kOffWorldEntities + sizeof(WorldEntities) <= kOffCollisionRing);
+
+	// ---- world identity @0x1FFC0 (Skyrim -> MC, seqlock) --------------------------------------
+	// SkyState::worldId as a key that doesn't depend on the load order: the plugin that defines the
+	// worldspace or interior cell, and the form's ID within that plugin. Minecraft gives every Skyrim
+	// world its own square of its map by this key. Positions in this protocol stay relative to the
+	// world they are in; only Minecraft adds the square's origin.
+	inline constexpr std::uint64_t kOffWorldInfo = 0x1FFC0;
+
+	struct WorldInfo
+	{
+		std::uint32_t seq;
+		std::uint32_t worldId;     // as in SkyState
+		std::uint32_t localId;     // FormID within its plugin
+		char          plugin[52];  // the plugin's file name, NUL-terminated
+	};
+	static_assert(sizeof(WorldInfo) == 64);
+	static_assert(kOffWorldEntities + sizeof(WorldEntities) <= kOffWorldInfo);
+	static_assert(kOffWorldInfo + sizeof(WorldInfo) <= kOffCollisionRing);
 
 	// ---- render ring (MC -> Skyrim) -----------------------------------------------------------
 	// Byte ring like the collision ring. Minecraft ships its own block meshes (built by Minecraft's

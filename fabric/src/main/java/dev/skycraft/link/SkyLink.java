@@ -267,6 +267,11 @@ public final class SkyLink {
 		public boolean takingOver() {
 			return (this.flags & SKY_TAKEOVER) != 0;
 		}
+
+		/** Skyrim runs inside Skyrim Together Reborn, whose death system respawns the Skyrim player. */
+		public boolean strSession() {
+			return (this.flags & SKY_STR_SESSION) != 0;
+		}
 	}
 
 	/** Seqlock read of SkyState into {@code out}. Returns false if the link is down. */
@@ -302,6 +307,13 @@ public final class SkyLink {
 			}
 			VarHandle.loadLoadFence();
 			if ((int) INT.getAcquire(s, b + WG_SEQ) == seq1) {
+				// Skyrim's columns are in its world; the grid lies in that world's square of the map.
+				var origin = dev.skycraft.world.SkyOrigin.of(out.worldId);
+				if (origin == null) {
+					return null;
+				}
+				out.originX += origin.x();
+				out.originZ += origin.z();
 				return out;
 			}
 		}
@@ -344,6 +356,34 @@ public final class SkyLink {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * The load-order independent key of Skyrim's world {@code worldId} ("plugin.esm:00abcd", see
+	 * WorldInfo in the protocol), or null if Skyrim hasn't described that world yet.
+	 */
+	public static @org.jspecify.annotations.Nullable String readWorldKey(int worldId) {
+		MemorySegment s = shm;
+		if (s == null || worldId == 0) {
+			return null;
+		}
+		long b = OFF_WORLD_INFO;
+		for (int attempt = 0; attempt < 100; attempt++) {
+			int seq1 = (int) INT.getAcquire(s, b + WI_SEQ);
+			if ((seq1 & 1) != 0) {
+				Thread.onSpinWait();
+				continue;
+			}
+			int world = s.get(JAVA_INT, b + WI_WORLD_ID);
+			int local = s.get(JAVA_INT, b + WI_LOCAL_ID);
+			String plugin = readName(s, b + WI_PLUGIN, WI_PLUGIN_BYTES);
+			VarHandle.loadLoadFence();
+			if ((int) INT.getAcquire(s, b + WI_SEQ) != seq1) {
+				continue;
+			}
+			return seq1 == 0 || world != worldId ? null : dev.skycraft.world.SkyWorlds.key(plugin, local, worldId);
+		}
+		return null;
 	}
 
 	/** Raw SkyState sequence number; changes once per Skyrim frame. */
@@ -456,8 +496,8 @@ public final class SkyLink {
 
 	// ---- actor table (read) ----------------------------------------------------------------
 
-	/** One nearby Skyrim actor (see ActorRecord in the protocol header). */
-	public record Actor(int formId, int flags, float x, float y, float z, float yaw, float width, float height, float healthFrac, int level, String name) {
+	/** One nearby Skyrim actor (see ActorRecord in the protocol header), at its Minecraft map position. */
+	public record Actor(int formId, int flags, double x, double y, double z, float yaw, float width, float height, float healthFrac, int level, String name) {
 		public boolean dead() {
 			return (this.flags & ACTOR_DEAD) != 0;
 		}
@@ -467,7 +507,10 @@ public final class SkyLink {
 		}
 	}
 
-	/** Seqlock read of the actor table. Returns false (leaving {@code out} empty) on a torn read. */
+	/**
+	 * Seqlock read of the actor table, in Minecraft map positions. Returns false (leaving {@code out}
+	 * empty) on a torn read, or while the world the actors are in has no place in the map yet.
+	 */
 	public static boolean readActors(java.util.List<Actor> out) {
 		out.clear();
 		MemorySegment s = shm;
@@ -482,11 +525,15 @@ public final class SkyLink {
 				continue;
 			}
 			int count = Math.min(s.get(JAVA_INT, b + AT_COUNT), MAX_ACTORS);
+			var origin = dev.skycraft.world.SkyOrigin.of(s.get(JAVA_INT, b + AT_WORLD_ID));
+			if (origin == null) {
+				return false;
+			}
 			for (int i = 0; i < count; i++) {
 				long r = b + AT_RECORDS + i * ACTOR_RECORD_BYTES;
 				out.add(new Actor(
 					s.get(JAVA_INT, r), s.get(JAVA_INT, r + 4),
-					s.get(JAVA_FLOAT, r + 8), s.get(JAVA_FLOAT, r + 12), s.get(JAVA_FLOAT, r + 16),
+					origin.toMcX(s.get(JAVA_FLOAT, r + 8)), s.get(JAVA_FLOAT, r + 12), origin.toMcZ(s.get(JAVA_FLOAT, r + 16)),
 					s.get(JAVA_FLOAT, r + 20), s.get(JAVA_FLOAT, r + 24), s.get(JAVA_FLOAT, r + 28),
 					s.get(JAVA_FLOAT, r + 32), Short.toUnsignedInt(s.get(JAVA_SHORT, r + 36)), readName(s, r + 40, 24)
 				));
@@ -607,7 +654,20 @@ public final class SkyLink {
 		return writeRender(type, header, body, 1);
 	}
 
-	private static synchronized boolean writeRender(int type, java.nio.ByteBuffer header, java.nio.ByteBuffer body, int attempts) {
+	// Skyrim doesn't drain the ring while a menu covers the world or it's loading. Waiting then must
+	// neither hold what the server thread needs (this lock is the render ring's alone) nor stop
+	// Minecraft: a ring that stopped moving fails fast, and callers send again later.
+	private static final Object RENDER_LOCK = new Object();
+	private static final int STALLED_ATTEMPTS = 50;
+	private static long stalledTail = -1;
+
+	private static boolean writeRender(int type, java.nio.ByteBuffer header, java.nio.ByteBuffer body, int attempts) {
+		synchronized (RENDER_LOCK) {
+			return writeRenderLocked(type, header, body, attempts);
+		}
+	}
+
+	private static boolean writeRenderLocked(int type, java.nio.ByteBuffer header, java.nio.ByteBuffer body, int attempts) {
 		MemorySegment s = shm;
 		if (s == null) {
 			return false;
@@ -619,13 +679,18 @@ public final class SkyLink {
 			return false;
 		}
 		long base = OFF_RENDER_RING;
+		long seenTail = -1;
+		int unmoved = 0;
 		for (int attempt = 0; attempt < attempts; attempt++) {
 			long head = s.get(JAVA_LONG, base + RR_HEAD);
 			long tail = (long) LONG.getAcquire(s, base + RR_TAIL);
+			unmoved = tail == seenTail ? unmoved + 1 : 0;
+			seenTail = tail;
 			long pos = head % RR_DATA_BYTES;
 			long pad = pos + msgBytes > RR_DATA_BYTES ? RR_DATA_BYTES - pos : 0;
 			if (RR_DATA_BYTES - (head - tail) < msgBytes + pad) {
-				if (attempt + 1 >= attempts) {
+				if (attempt + 1 >= attempts || tail == stalledTail || unmoved >= STALLED_ATTEMPTS) {
+					stalledTail = tail;
 					break;
 				}
 				try {

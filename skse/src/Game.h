@@ -100,7 +100,9 @@ namespace skycraft
 		void ConsumeLook(float& a_dx, float& a_dy);
 		// Tells MC to release everything (input focus moved to Skyrim).
 		void ReleaseAll();
-		void ReconcileKeys();
+		// Once a frame: replays key and button events Skyrim's input queue lost while input goes to
+		// Minecraft (a_routing); a lost press only when a_pressAllowed (no Minecraft screen open).
+		void Reconcile(bool a_routing, bool a_pressAllowed);
 		bool HasFocus();
 	}
 
@@ -117,6 +119,17 @@ namespace skycraft
 		void PerFrame(RE::PlayerCharacter* a_player, bool a_puppeting, float a_delta);
 		// Someone nearby is fighting the player (in combat with them as its target). Main thread.
 		bool PlayerEngaged();
+	}
+
+	namespace Coop
+	{
+		// The game runs inside Skyrim Together Reborn's launcher (SkyrimTogether.exe).
+		bool StrLoaded();
+		// One of STR's stand-ins for another player (never the local player, never an NPC).
+		bool IsStrRemotePlayer(RE::Actor* a_actor);
+		// Main thread, every frame: STR players whose friend's Minecraft body stands at their spot are
+		// hidden (that body is drawn instead); a friend without SkyCraft stays visible.
+		void PerFrame(RE::PlayerCharacter* a_player, bool a_minecraftInWorld);
 	}
 
 	namespace BlockLights

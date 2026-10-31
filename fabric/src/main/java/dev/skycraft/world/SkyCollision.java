@@ -48,6 +48,9 @@ public final class SkyCollision {
 	private static volatile java.util.function.Predicate<net.minecraft.world.entity.Entity> smoothCollider = e -> false;
 	private static final Set<Long> KNOWN_REGIONS = ConcurrentHashMap.newKeySet();
 	private static volatile int epoch = -1;
+	// Skyrim sends its world's geometry in that world's coordinates; it is kept at its square of the
+	// Minecraft map (SkyOrigin), so every query here is in map coordinates. Null: not placed yet.
+	private static volatile SkyOrigin.@Nullable Origin stored;
 	private static Thread consumer;
 
 	private SkyCollision() {
@@ -233,12 +236,14 @@ public final class SkyCollision {
 		if (s == null) {
 			return false;
 		}
+		followOrigin();
 		long head = SkyLink.collisionHead();
 		long tail = SkyLink.collisionTail();
 		if (tail >= head) {
 			return false;
 		}
 		long data = OFF_COLLISION_RING + CR_DATA;
+		long start = tail;
 		while (tail < head) {
 			long pos = tail % CR_DATA_BYTES;
 			int type = s.get(JAVA_INT, data + pos);
@@ -248,8 +253,13 @@ public final class SkyCollision {
 				continue;
 			}
 			long payload = data + pos + 8;
+			int msgEpoch = s.get(JAVA_INT, type == COL_CLEAR ? payload : payload + 24);
+			// A new epoch's geometry goes into its world's square of the map: wait until it's placed.
+			if ((type == COL_CLEAR || epoch == -1) && !place(msgEpoch)) {
+				break;
+			}
 			switch (type) {
-				case COL_CLEAR -> clear(s.get(JAVA_INT, payload));
+				case COL_CLEAR -> clear(msgEpoch);
 				case COL_REGION -> readRegion(s, payload);
 				case COL_TRIS -> readTris(s, payload);
 				default -> SkyCraft.LOG.warn("SkyCraft: unknown collision message {}", type);
@@ -257,7 +267,78 @@ public final class SkyCollision {
 			tail += align8(8 + payloadBytes);
 		}
 		SkyLink.setCollisionTail(tail);
+		return tail != start;
+	}
+
+	/**
+	 * Finds the world a new collision epoch belongs to (Skyrim states both each frame) and its square
+	 * of the map. False: not yet (Skyrim hasn't published the epoch, or the server hasn't answered).
+	 */
+	private static boolean place(int msgEpoch) {
+		SkyLink.SkyState sky = new SkyLink.SkyState();
+		if (!SkyLink.readSkyState(sky)) {
+			return false;
+		}
+		if (Integer.compareUnsigned(sky.collisionEpoch, msgEpoch) < 0) {
+			return false; // Skyrim's worker wrote it before the frame that announces it
+		}
+		if (sky.collisionEpoch != msgEpoch) {
+			stored = null; // superseded already: its geometry is dropped, the newer epoch follows
+			return true;
+		}
+		SkyOrigin.Origin origin = SkyOrigin.of(sky.worldId);
+		if (origin == null) {
+			return false;
+		}
+		stored = origin;
 		return true;
+	}
+
+	/** The server moved this world's square (another server was joined): move what is held with it. */
+	private static void followOrigin() {
+		SkyOrigin.Origin held = stored;
+		SkyOrigin.Origin now = held != null ? SkyOrigin.of(held.worldId()) : null;
+		if (held == null || now == null || (now.x() == held.x() && now.z() == held.z())) {
+			return;
+		}
+		int dx = now.x() - held.x(), dz = now.z() - held.z();
+		int rdx = Math.floorDiv(dx, REGION_SIZE), rdz = Math.floorDiv(dz, REGION_SIZE);
+		moveKeys(SHAPES, dx, dz);
+		moveKeys(FILL, dx, dz);
+		moveKeys(TRI_HASH, rdx, rdz);
+		java.util.Map<Long, SkyTri[]> tris = new java.util.HashMap<>(TRIS), ghosts = new java.util.HashMap<>(GHOSTS);
+		TRIS.clear();
+		GHOSTS.clear();
+		tris.forEach((k, v) -> TRIS.put(moved(k, rdx, rdz), shiftAll(v, dx, dz)));
+		ghosts.forEach((k, v) -> GHOSTS.put(moved(k, rdx, rdz), shiftAll(v, dx, dz)));
+		java.util.List<Long> regions = new java.util.ArrayList<>(KNOWN_REGIONS);
+		KNOWN_REGIONS.clear();
+		CHANGED.clear();
+		for (long r : regions) {
+			long key = moved(r, rdx, rdz);
+			KNOWN_REGIONS.add(key);
+			CHANGED.add(BlockPos.asLong(BlockPos.getX(key) * REGION_SIZE, BlockPos.getY(key) * REGION_SIZE, BlockPos.getZ(key) * REGION_SIZE));
+		}
+		stored = now;
+		SkyCraft.LOG.info("SkyCraft: Skyrim's geometry moved with its world's square to {} {}", now.x(), now.z());
+	}
+
+	private static long moved(long key, int dx, int dz) {
+		return BlockPos.asLong(BlockPos.getX(key) + dx, BlockPos.getY(key), BlockPos.getZ(key) + dz);
+	}
+
+	private static <V> void moveKeys(ConcurrentHashMap<Long, V> map, int dx, int dz) {
+		java.util.Map<Long, V> copy = new java.util.HashMap<>(map);
+		map.clear();
+		copy.forEach((k, v) -> map.put(moved(k, dx, dz), v));
+	}
+
+	private static SkyTri[] shiftAll(SkyTri[] tris, double dx, double dz) {
+		SkyTri[] out = new SkyTri[tris.length];
+		for (int i = 0; i < tris.length; i++) {
+			out[i] = tris[i].shifted(dx, dz);
+		}
+		return out;
 	}
 
 	private static long align8(long v) {
@@ -284,16 +365,18 @@ public final class SkyCollision {
 	}
 
 	private static void readRegion(MemorySegment s, long p) {
-		int minX = s.get(JAVA_INT, p);
+		SkyOrigin.Origin origin = stored;
+		int ox = origin != null ? origin.x() : 0, oz = origin != null ? origin.z() : 0;
+		int minX = s.get(JAVA_INT, p) + ox;
 		int minY = s.get(JAVA_INT, p + 4);
-		int minZ = s.get(JAVA_INT, p + 8);
-		int maxX = s.get(JAVA_INT, p + 12);
+		int minZ = s.get(JAVA_INT, p + 8) + oz;
+		int maxX = s.get(JAVA_INT, p + 12) + ox;
 		int maxY = s.get(JAVA_INT, p + 16);
-		int maxZ = s.get(JAVA_INT, p + 20);
+		int maxZ = s.get(JAVA_INT, p + 20) + oz;
 		int msgEpoch = s.get(JAVA_INT, p + 24);
 		int count = s.get(JAVA_INT, p + 28);
 		adoptEpochIfFresh(msgEpoch);
-		if (msgEpoch != epoch) {
+		if (msgEpoch != epoch || origin == null) {
 			return; // stale region from before a world change
 		}
 
@@ -302,9 +385,9 @@ public final class SkyCollision {
 		java.util.HashMap<Long, Integer> freshFill = new java.util.HashMap<>(count * 2);
 		long e = p + COL_REGION_HEADER_BYTES;
 		for (int i = 0; i < count; i++, e += COL_BLOCK_BYTES) {
-			int x = s.get(JAVA_INT, e);
+			int x = s.get(JAVA_INT, e) + ox;
 			int y = s.get(JAVA_INT, e + 4);
-			int z = s.get(JAVA_INT, e + 8);
+			int z = s.get(JAVA_INT, e + 8) + oz;
 			VoxelShape shape = buildShape(s, e + 16);
 			if (shape != null) {
 				long key = BlockPos.asLong(x, y, z);
@@ -339,13 +422,15 @@ public final class SkyCollision {
 	}
 
 	private static void readTris(MemorySegment s, long p) {
-		int minX = s.get(JAVA_INT, p);
+		SkyOrigin.Origin origin = stored;
+		int ox = origin != null ? origin.x() : 0, oz = origin != null ? origin.z() : 0;
+		int minX = s.get(JAVA_INT, p) + ox;
 		int minY = s.get(JAVA_INT, p + 4);
-		int minZ = s.get(JAVA_INT, p + 8);
+		int minZ = s.get(JAVA_INT, p + 8) + oz;
 		int msgEpoch = s.get(JAVA_INT, p + 24);
 		int count = s.get(JAVA_INT, p + 28);
 		adoptEpochIfFresh(msgEpoch);
-		if (msgEpoch != epoch) {
+		if (msgEpoch != epoch || origin == null) {
 			return;
 		}
 		SkyTri[] tris = new SkyTri[count];
@@ -361,7 +446,7 @@ public final class SkyCollision {
 			}
 			int flags = s.get(JAVA_INT, e + 36);
 			hash = hash * 31 + flags;
-			SkyTri t = new SkyTri(v, 0, flags);
+			SkyTri t = new SkyTri(v, 0, flags, ox, oz);
 			if (t.degenerate()) {
 				continue;
 			}

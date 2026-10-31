@@ -566,15 +566,25 @@ namespace skycraft
 				Input::ReleaseAll();
 			}
 			st.skyrimMenuOpen = menu || loading;
-			if (!st.skyrimMenuOpen) Input::ReconcileKeys();
+			Input::Reconcile(st.puppeting && !st.skyrimMenuOpen, !st.mcScreenOpen);
 
 			// World identity: exterior worldspace or interior cell. A change wipes MC's collision.
 			if (cell) {
 				auto*      ws = a_player->GetWorldspace();
-				const auto id = cell->IsInteriorCell() ? cell->GetFormID() : (ws ? ws->GetFormID() : cell->GetFormID());
+				RE::TESForm* world = cell->IsInteriorCell() || !ws ? static_cast<RE::TESForm*>(cell) : ws;
+				const auto id = world->GetFormID();
 				if (id != worldId) {
 					logger::info("world changed {:08X} -> {:08X}", worldId, id);
 					worldId = id;
+					// Minecraft gives each world its own square of its map, by this identity.
+					proto::WorldInfo info{};
+					info.worldId = id;
+					info.localId = world->GetLocalFormID();
+					if (auto* file = world->GetFile(0)) {
+						const auto name = file->GetFilename();
+						std::memcpy(info.plugin, name.data(), std::min(name.size(), sizeof(info.plugin) - 1));
+					}
+					link.WriteWorldInfo(info);
 					Dig::SetWorld(id);
 					++epoch;
 					Collision::Get().Reset(epoch);
@@ -664,6 +674,7 @@ namespace skycraft
 			st.mcGuiScale = haveMc ? static_cast<int>(mc.guiScale) : 0;
 			Input::SetActivatePromptKey(puppet);
 			Combat::PerFrame(a_player, puppet, a_delta);
+			Coop::PerFrame(a_player, haveMc && st.mcInWorld);
 			Items::PerFrame(a_player);
 			WorldRender::UpdateRagdoll(a_player, haveMc && st.mcInWorld);
 			if (puppet) {
@@ -987,7 +998,8 @@ namespace skycraft
 
 			// Tell Minecraft where Skyrim's player is and where they're looking.
 			proto::SkyState sky{};
-			sky.flags = (cell ? proto::kSkyInGame : 0u) | (menu ? proto::kSkyMenuOpen : 0u) | (loading ? proto::kSkyLoading : 0u) | (takeover ? proto::kSkyTakeover : 0u);
+			sky.flags = (cell ? proto::kSkyInGame : 0u) | (menu ? proto::kSkyMenuOpen : 0u) | (loading ? proto::kSkyLoading : 0u) | (takeover ? proto::kSkyTakeover : 0u) |
+			            (Coop::StrLoaded() ? proto::kSkyStrSession : 0u);
 			const auto skyMc = SkyToMc(current);
 			sky.worldId = worldId;
 			sky.collisionEpoch = epoch;

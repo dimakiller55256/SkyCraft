@@ -23,6 +23,8 @@ namespace skycraft
 		// Seqlock write of Skyrim -> MC state. Called once per Skyrim frame (MC paces on seq).
 		void WriteSkyState(const proto::SkyState& a_state);
 		void WriteWaterGrid(const proto::WaterGrid& a_grid);
+		// Seqlock write of the current world's load-order independent identity (on world change).
+		void WriteWorldInfo(const proto::WorldInfo& a_info);
 		// Seqlock read of MC -> Skyrim state. Returns false if no consistent snapshot was obtained.
 		bool ReadMcState(proto::McState& a_out) const;
 		void WriteItemRequest(const proto::ItemRequest& a_request);
@@ -60,6 +62,7 @@ namespace skycraft
 		HANDLE        mapping_{ nullptr };
 		std::uint8_t* base_{ nullptr };
 		std::uint32_t overlayFront_{ 2 };
+		std::uint32_t world_{ 0 };  // last WriteWorldInfo: the world actor positions are in
 	};
 
 	// ---- coordinate conversion (Skyrim units <-> Minecraft blocks) ----------------------------

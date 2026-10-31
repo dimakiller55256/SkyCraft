@@ -158,8 +158,9 @@ namespace skycraft
 			for (auto& handle : lists->highActorHandles) {
 				auto actorPtr = handle.get();
 				auto* actor = actorPtr.get();
-				if (!actor || actor == a_player || actor->IsDead() || !actor->Is3DLoaded() || actor->GetPosition().GetDistance(playerPos) > kRange) {
-					continue;
+				if (!actor || actor == a_player || actor->IsDead() || !actor->Is3DLoaded() || actor->GetPosition().GetDistance(playerPos) > kRange ||
+					Coop::IsStrRemotePlayer(actor)) {
+					continue;  // STR places another player's stand-in where their own Minecraft has them
 				}
 				const auto   sky = actor->GetPosition();
 				const auto   mc = SkyToMc(sky);

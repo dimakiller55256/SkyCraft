@@ -21,6 +21,7 @@ public final class SkyCraft implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
+		ServerWatchdog.init();
 		SkyCombat.init();
 		dev.skycraft.items.ItemConversion.init();
 		dev.skycraft.net.SkyNet.init();

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'NetworkSmoke', 'AssistantWorldSmoke')]
+    [ValidateSet('Check', 'BuildFabric', 'BuildSkse', 'BuildLink', 'NativeTests', 'NetworkSmoke', 'AssistantWorldSmoke', 'GameplaySmoke', 'TunnelSmoke', 'SteamHostSmoke', 'SquaresSmoke')]
     [string]$Action = 'Check',
     [string]$JavaHome,
     [string]$CMakePath,
@@ -69,7 +69,8 @@ if ($Action -eq 'Check') {
     return
 }
 
-if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke')) {
+$linkExe = Join-Path $repoRoot '.tools\link-build\Release\SkyCraftLink.exe'
+if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke', 'GameplaySmoke', 'TunnelSmoke', 'SteamHostSmoke', 'SquaresSmoke')) {
     if (-not $jdkReady) { throw 'Set -JavaHome to a JDK 25 folder, or configure .tools/dev-local.json.' }
     if ($cacheInsideGame) { throw 'Gradle cache must be outside the Skyrim game directory. Set -GradleUserHome or .tools/dev-local.json.' }
     $savedEnvironment = @{}
@@ -103,6 +104,29 @@ if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke')) {
                     if (-not (Test-Path -LiteralPath $fixtureResult) -or (Get-Content -LiteralPath $fixtureResult -Raw | ConvertFrom-Json).result -ne 'PASS') { throw 'Unsafe position publication; inspect position-fixture-result.json.' }
                 } finally { if (-not $fixture.HasExited) { $fixture.Kill() }; $fixture.Dispose() }
                 if (-not (Test-Path -LiteralPath $worldResult) -or (Get-Content -LiteralPath $worldResult -Raw).Trim() -ne 'PASS') { throw 'Assistant world smoke failed; inspect .tools/assistant-world-smoke/logs/latest.log.' }
+            } elseif ($Action -in @('GameplaySmoke', 'TunnelSmoke', 'SteamHostSmoke')) {
+                # Two isolated real Minecraft clients (host opens LAN, guest joins) in .tools/gameplay-*;
+                # never the Prism instances or Skyrim. Report in .tools/gameplay-audit/<time>.
+                # TunnelSmoke: both start SkyCraft Link from the Steam menu, the guest joins through it (BuildLink first).
+                # SteamHostSmoke: the host alone opens a real Steam lobby; it uses the owner's Steam account, ask first.
+                if ($Action -eq 'TunnelSmoke' -and -not (Test-Path -LiteralPath $linkExe)) { throw 'Run -Action BuildLink first.' }
+                & .\gradlew.bat -PnetworkSmoke -PgameplaySmoke exportGameplayLaunch --no-daemon --no-configuration-cache --console=plain
+                if ($LASTEXITCODE -ne 0) { throw "Gameplay client export failed (exit $LASTEXITCODE)." }
+                $python = if ($localConfig.python) { $localConfig.python } else { (Get-Command python -ErrorAction Stop).Source }
+                $audit = Join-Path $repoRoot ('.tools\gameplay-audit\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+                $runnerArgs = @('-u', (Join-Path $repoRoot 'tools\run-gameplay-clients.py'), $audit)
+                if ($Action -eq 'TunnelSmoke') { $runnerArgs += @('--steamlink', $linkExe) }
+                if ($Action -eq 'SteamHostSmoke') { $runnerArgs += '--steam-host' }
+                & $python @runnerArgs
+                if ($LASTEXITCODE -ne 0) { throw "Gameplay smoke failed; see $audit." }
+            } elseif ($Action -eq 'SquaresSmoke') {
+                # Two real clients, each with its own Skyrim stand-in in a different Skyrim world.
+                & .\gradlew.bat -PsquaresSmoke exportSquaresLaunch --no-daemon --no-configuration-cache --console=plain
+                if ($LASTEXITCODE -ne 0) { throw "Squares client export failed (exit $LASTEXITCODE)." }
+                $python = if ($localConfig.python) { $localConfig.python } else { (Get-Command python -ErrorAction Stop).Source }
+                $audit = Join-Path $repoRoot ('.tools\squares-audit\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+                & $python -u (Join-Path $repoRoot 'tools\world-squares-smoke.py') $audit
+                if ($LASTEXITCODE -ne 0) { throw "World squares smoke failed; see $audit." }
             } elseif ($Action -eq 'NetworkSmoke') {
                 if (Get-Process -Name SkyrimSE -ErrorAction SilentlyContinue) { throw 'Close Skyrim normally before an isolated shared-memory client check.' }
                 $smokeResult = Join-Path $repoRoot '.tools\network-smoke-game\network-smoke-result.txt'
@@ -136,6 +160,33 @@ if ($Action -in @('BuildFabric', 'NetworkSmoke', 'AssistantWorldSmoke')) {
 
 if (-not $vsRoot) { throw 'Install Visual Studio 2026 Build Tools with C++ x64/x86 and a Windows SDK.' }
 if (-not $cmakeReady) { throw 'CMake is missing. Install the C++ CMake tools component or pass -CMakePath.' }
+if ($Action -eq 'NativeTests') {
+    # Standalone checks of the plugin's game-independent policy headers (no Skyrim, no CommonLib).
+    $testBuild = Join-Path $repoRoot '.tools\native-policy'
+    & $CMakePath -S (Join-Path $repoRoot 'tools\native-policy-tests') -B $testBuild -G 'Visual Studio 18 2026' -A x64
+    if ($LASTEXITCODE -ne 0) { throw "Native test configuration failed (exit $LASTEXITCODE)." }
+    & $CMakePath --build $testBuild --config Release
+    if ($LASTEXITCODE -ne 0) { throw "Native test build failed (exit $LASTEXITCODE)." }
+    & (Join-Path $testBuild 'Release\CombatPolicyTest.exe')
+    if ($LASTEXITCODE -ne 0) { throw "Native policy test failed with code $LASTEXITCODE (see tools/native-policy-tests/main.cpp)." }
+    return
+}
+if ($Action -eq 'BuildLink') {
+    # SkyCraft Link (the Steam tunnel helper) and its tests: loopback tunnels, no Steam, no games.
+    $linkBuild = Join-Path $repoRoot '.tools\link-build'
+    & $CMakePath -S (Join-Path $repoRoot 'link') -B $linkBuild -G 'Visual Studio 18 2026' -A x64
+    if ($LASTEXITCODE -ne 0) { throw "SkyCraft Link configuration failed (exit $LASTEXITCODE)." }
+    & $CMakePath --build $linkBuild --config Release
+    if ($LASTEXITCODE -ne 0) { throw "SkyCraft Link build failed (exit $LASTEXITCODE)." }
+    & (Join-Path $linkBuild 'Release\LinkTests.exe')
+    if ($LASTEXITCODE -ne 0) { throw "SkyCraft Link tests failed: $LASTEXITCODE checks (see link/tests/main.cpp)." }
+    # The real program as two processes over its loopback link. Report in .tools/link-audit/<time>.
+    $python = if ($localConfig.python) { $localConfig.python } else { (Get-Command python -ErrorAction Stop).Source }
+    $audit = Join-Path $repoRoot ('.tools\link-audit\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    & $python -u (Join-Path $repoRoot 'tools\link-smoke.py') $linkExe $audit
+    if ($LASTEXITCODE -ne 0) { throw "SkyCraft Link smoke failed; see $audit." }
+    return
+}
 if (-not $commonLibReady) { throw 'Run git submodule update --init --recursive.' }
 if (-not $vcpkgReady) { throw 'Clone microsoft/vcpkg into .tools/vcpkg and run bootstrap-vcpkg.bat -disableMetrics.' }
 & (Join-Path $PSScriptRoot 'check-native-api.ps1')

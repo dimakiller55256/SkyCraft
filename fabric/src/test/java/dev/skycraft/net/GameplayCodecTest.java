@@ -22,9 +22,10 @@ class GameplayCodecTest {
     }
     @Test void guestHurtPreservesOriginForShield(){
         var b=new RegistryFriendlyByteBuf(Unpooled.buffer(),RegistryAccess.EMPTY);try{
-            var p=new SkyNet.Hurt(1,178.48f,0x123456,2,true,-12.5f,3f,42.25f);
+            // Far squares of the map need the attacker's position in full precision.
+            var p=new SkyNet.Hurt(1,178.48f,0x123456,2,true,-16384.0*3-12.53,3,49152.0+42.25);
             SkyNet.Hurt.CODEC.encode(b,p);assertEquals(p,SkyNet.Hurt.CODEC.decode(b));assertEquals(0,b.readableBytes());
-            assertTrue(p.type().id().toString().endsWith("hurt_v2"));
+            assertTrue(p.type().id().toString().endsWith("hurt_v3"));
         }finally{b.release();}
     }
 }
